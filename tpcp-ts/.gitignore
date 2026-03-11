@@ -1,0 +1,5 @@
+node_modules/
+dist/
+build_errors.txt
+*.js.map
+*.tsbuildinfo

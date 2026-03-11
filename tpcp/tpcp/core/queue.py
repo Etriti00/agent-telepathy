@@ -17,35 +17,71 @@
 # For commercial licensing inquiries, see COMMERCIAL_LICENSE.md
 
 import asyncio
-from typing import Dict, List
+from collections import deque
+from typing import Dict, List, Optional
 from uuid import UUID
 from tpcp.schemas.envelope import TPCPEnvelope
 
+
 class MessageQueue:
     """
-    In-memory Dead-Letter Queue (DLQ) for temporally unrestorable network partitions.
-    Caches TPCPEnvelopes locally and returns them in sequence once connections are restored.
+    In-memory Dead-Letter Queue (DLQ) for network-partitioned message delivery.
+    
+    Caches TPCPEnvelopes locally keyed by target peer UUID. Messages are returned
+    in FIFO order once connections are restored. Supports:
+    - Bounded size per peer (prevents unbounded memory growth on dead peers)
+    - Atomic front-queuing for safe mid-drain re-queueing on failure
     """
-    def __init__(self):
-        # Maps target peer UUID to a list of undelivered TPCPEnvelopes
-        self._dlq: Dict[UUID, List[TPCPEnvelope]] = {}
+
+    def __init__(self, max_size_per_peer: int = 500):
+        self._max_size = max_size_per_peer
+        # Use deque for O(1) appendleft (enqueue_front) and pop (drain)
+        self._dlq: Dict[UUID, deque] = {}
         self._lock = asyncio.Lock()
 
     async def enqueue(self, target_id: UUID, envelope: TPCPEnvelope) -> None:
-        """Pushes an undelivered message envelope into the queue."""
+        """Push an undelivered message to the back of the queue."""
         async with self._lock:
             if target_id not in self._dlq:
-                self._dlq[target_id] = []
-            self._dlq[target_id].append(envelope)
+                self._dlq[target_id] = deque()
+            
+            q = self._dlq[target_id]
+            if len(q) >= self._max_size:
+                # Evict oldest message when full (LRU-style)
+                q.popleft()
+            q.append(envelope)
+
+    async def enqueue_front(self, target_id: UUID, envelope: TPCPEnvelope) -> None:
+        """Re-insert a failed message at the front of the queue (for safe mid-drain failure)."""
+        async with self._lock:
+            if target_id not in self._dlq:
+                self._dlq[target_id] = deque()
+            self._dlq[target_id].appendleft(envelope)
+
+    async def dequeue_one(self, target_id: UUID) -> Optional[TPCPEnvelope]:
+        """Pop and return a single message from the front of the queue."""
+        async with self._lock:
+            if target_id in self._dlq and self._dlq[target_id]:
+                msg = self._dlq[target_id].popleft()
+                if not self._dlq[target_id]:
+                    del self._dlq[target_id]
+                return msg
+            return None
 
     async def drain(self, target_id: UUID) -> List[TPCPEnvelope]:
-        """Atomically extracts all messages for a given target to resync payloads."""
+        """Atomically extract ALL messages for a given target (for bulk drain use cases)."""
         async with self._lock:
             if target_id in self._dlq:
-                return self._dlq.pop(target_id)
+                msgs = list(self._dlq.pop(target_id))
+                return msgs
             return []
 
     async def has_messages(self, target_id: UUID) -> bool:
-        """Checks if there are currently pending messages for a given target."""
+        """Check if there are pending messages for a given target."""
         async with self._lock:
             return target_id in self._dlq and len(self._dlq[target_id]) > 0
+
+    @property
+    def queue_stats(self) -> Dict[str, int]:
+        """Returns a snapshot of queue depths per peer (for monitoring)."""
+        return {str(k): len(v) for k, v in self._dlq.items()}

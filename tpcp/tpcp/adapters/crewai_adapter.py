@@ -17,22 +17,27 @@
 # For commercial licensing inquiries, see COMMERCIAL_LICENSE.md
 
 import json
-from typing import Any, Dict, Union
+from typing import Any, Dict, Optional, Union
 from uuid import UUID
 
 from tpcp.adapters.base import BaseFrameworkAdapter
 from tpcp.schemas.envelope import TPCPEnvelope, Intent, TextPayload
+from tpcp.security.crypto import AgentIdentityManager
 
 
 class CrewAIAdapter(BaseFrameworkAdapter):
     """
     Adapter for translating CrewAI agent outputs (typically strings or dicts)
-    into standard TPCP envelopes.
+    into signed TPCP envelopes. Accepts an AgentIdentityManager to sign all outgoing packets.
     """
+
+    def __init__(self, agent_identity, identity_manager: Optional[AgentIdentityManager] = None):
+        super().__init__(agent_identity)
+        self.identity_manager = identity_manager
 
     async def pack_thought(self, native_output: Union[str, Dict[str, Any]], receiver_id: UUID, intent: Intent) -> TPCPEnvelope:
         """
-        Wraps a CrewAI text or dict output into a TPCP TextPayload.
+        Wraps a CrewAI text or dict output into a signed TPCP TextPayload envelope.
         """
         if isinstance(native_output, dict):
             content_str = json.dumps(native_output)
@@ -42,7 +47,11 @@ class CrewAIAdapter(BaseFrameworkAdapter):
         payload = TextPayload(content=content_str, language="en")
         header = self._create_header(receiver_id, intent)
         
-        return TPCPEnvelope(header=header, payload=payload)
+        signature = None
+        if self.identity_manager:
+            signature = self.identity_manager.sign_payload(payload.model_dump())
+        
+        return TPCPEnvelope(header=header, payload=payload, signature=signature)
 
     async def unpack_payload(self, envelope: TPCPEnvelope) -> Union[str, Dict[str, Any]]:
         """

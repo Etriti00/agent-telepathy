@@ -55,6 +55,9 @@ IntentHandler = Callable[[TPCPEnvelope, WebSocketServerProtocol], Awaitable[None
 class TPCPNode:
     """
     The main client that an agent wraps itself in to connect to the TPCP network.
+    
+    Each node owns a cryptographic Ed25519 identity, CRDT shared memory, a vector bank,
+    and a Dead-Letter Queue for resilient routing under network partitions.
     """
 
     def __init__(self, identity: AgentIdentity, host: str = "127.0.0.1", port: int = 8000, adns_url: Optional[str] = None):
@@ -62,35 +65,35 @@ class TPCPNode:
         self.host = host
         self.port = port
         self.adns_url = adns_url
+        # A-DNS WebSocket connection — established lazily in start_listening()
         self._adns_ws: Optional[websockets.client.WebSocketClientProtocol] = None
         
-        # Initialize cryptographic trust layer
+        # Initialize cryptographic trust layer and override the identity public key
+        # so it always matches the actual keypair this node was born with.
         self.identity_manager = AgentIdentityManager()
-        # Override public key with newly generated Ed25519 one
         self.identity.public_key = self.identity_manager.get_public_key_string()
         
-        # Peer registry: maps agent_id to (AgentIdentity, websocket_url)
+        # Peer registry: maps agent_id (UUID) to (AgentIdentity, websocket_url)
         self.peer_registry: Dict[UUID, Tuple[AgentIdentity, str]] = {}
         
-        # Initialize Shared Semantic Memory (CRDT LWW-Map)
+        # Shared Semantic Memory — CRDT LWW-Map
         self.shared_memory = LWWMap(node_id=str(self.identity.agent_id))
         
-        # Initialize Vector Bank for high-dimensional semantic reception
+        # Vector Bank for high-dimensional semantic reception
         self.vector_bank = VectorBank(node_id=str(self.identity.agent_id))
         
-        # Dead-Letter Queue for offline routing
-        self.message_queue = MessageQueue()
+        # Dead-Letter Queue (max 500 messages per peer) for offline routing
+        self.message_queue = MessageQueue(max_size_per_peer=500)
 
-        # Intent routing table
+        # Intent routing table — maps Intent enum values to async handlers
         self.handlers: Dict[Intent, IntentHandler] = {}
         
-        # Register default internal handlers
+        # Register internal default handlers
         self.register_handler(Intent.HANDSHAKE, self._handle_handshake)
         self.register_handler(Intent.STATE_SYNC, self._handle_state_sync)
         self.register_handler(Intent.STATE_SYNC_VECTOR, self._handle_vector_sync)
         
         self._server: Optional[websockets.server.WebSocketServer] = None
-        self._loop = asyncio.get_event_loop()
 
     def register_handler(self, intent: Intent, handler: IntentHandler) -> None:
         """Register a callback for a specific intent."""
@@ -113,29 +116,45 @@ class TPCPNode:
         self._server = await websockets.serve(self._handle_connection, self.host, self.port)
         
         if self.adns_url:
-            self._loop.create_task(self._connect_to_adns())
+            # Use asyncio.get_event_loop() inside an async context — this is safe and correct
+            loop = asyncio.get_event_loop()
+            loop.create_task(self._connect_to_adns())
 
     async def _connect_to_adns(self) -> None:
-        """Connects to the global A-DNS Relay Server to register identity."""
-        try:
-            self._adns_ws = await websockets.client.connect(self.adns_url)
-            logger.info(f"Connected to Global A-DNS Relay at {self.adns_url}")
-            
-            # Broadcast DISCOVER_SYN to register
-            await self.broadcast_discovery()
-            
-            # Wait for routed messages
-            async for message in self._adns_ws:
-                await self._process_inbound(message, self._adns_ws)
-        except Exception as e:
-            logger.error(f"Failed to connect to A-DNS Relay: {e}")
+        """
+        Connects to the global A-DNS Relay Server with exponential backoff.
+        Once connected, registers identity and listens for routed messages.
+        """
+        backoff = 1.0
+        max_backoff = 60.0
+
+        while True:
+            try:
+                async with websockets.client.connect(self.adns_url) as ws:
+                    self._adns_ws = ws
+                    logger.info(f"Connected to Global A-DNS Relay at {self.adns_url}")
+                    backoff = 1.0  # reset on success
+                    
+                    # Announce presence
+                    await self.broadcast_discovery()
+                    
+                    # Listen for routed inbound from relay
+                    async for message in ws:
+                        await self._process_inbound(message, ws)
+            except Exception as e:
+                self._adns_ws = None
+                logger.warning(f"A-DNS connection lost: {e}. Retrying in {backoff}s...")
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, max_backoff)
 
     async def stop_listening(self) -> None:
-        """Stop the WebSocket server."""
+        """Stop the WebSocket server gracefully."""
         if self._server:
             self._server.close()
             await self._server.wait_closed()
             logger.info(f"Node {self.identity.agent_id} stopped listening.")
+        if self._adns_ws:
+            await self._adns_ws.close()
 
     async def _handle_connection(self, websocket: WebSocketServerProtocol, *args) -> None:
         """Handle individual inbound WebSocket connections."""
@@ -148,9 +167,11 @@ class TPCPNode:
             logger.error(f"Error handling connection: {e}")
 
     async def _process_inbound(self, raw_message: str | bytes, websocket: WebSocketServerProtocol) -> None:
-        """Deserialize and route incoming messages."""
+        """
+        Deserialize, cryptographically verify, and route incoming messages.
+        Unsigned or invalid-signature messages are dropped immediately.
+        """
         try:
-            # Parse the JSON string into the envelope schema
             if isinstance(raw_message, bytes):
                 raw_message = raw_message.decode('utf-8')
 
@@ -158,6 +179,27 @@ class TPCPNode:
             envelope = TPCPEnvelope.model_validate(data)
             
             logger.debug(f"Received {envelope.header.intent.value} from {envelope.header.sender_id}")
+            
+            # ── SECURITY MIDDLEWARE ──────────────────────────────────────────
+            # Verify signature if the sender is a known peer (skip for handshakes
+            # to allow initial registration, but log a warning for unsigned packets).
+            if envelope.header.intent != Intent.HANDSHAKE:
+                sender_id = envelope.header.sender_id
+                if sender_id not in self.peer_registry:
+                    logger.warning(f"Received {envelope.header.intent} from unregistered peer {sender_id}. Dropping.")
+                    return
+                
+                peer_identity, _ = self.peer_registry[sender_id]
+                
+                if not envelope.signature:
+                    logger.warning(f"Unsigned packet from {sender_id}. Dropping.")
+                    return
+                
+                payload_dict = envelope.payload.model_dump()
+                if not AgentIdentityManager.verify_signature(peer_identity.public_key, envelope.signature, payload_dict):
+                    logger.warning(f"INVALID SIGNATURE from {sender_id}. Dropping packet.")
+                    return
+            # ────────────────────────────────────────────────────────────────
             
             # Dispatch to appropriate handler
             handler = self.handlers.get(envelope.header.intent)
@@ -174,8 +216,25 @@ class TPCPNode:
             logger.error(f"Failed to process inbound message: {e}")
 
     async def _handle_handshake(self, envelope: TPCPEnvelope, websocket: WebSocketServerProtocol) -> None:
-        """Internal handler for inbound handshakes."""
+        """
+        Default handshake handler. Automatically registers the sender as a peer
+        if their identity is embedded in a TextPayload.
+        """
         logger.info(f"Handshake received from {envelope.header.sender_id}")
+        
+        # Auto-register the sender in the peer registry so we can route back to them
+        if isinstance(envelope.payload, TextPayload):
+            try:
+                sender_data = json.loads(envelope.payload.content)
+                sender_identity = AgentIdentity.model_validate(sender_data)
+                
+                # Derive their socket address from the websocket connection
+                peer_host = websocket.remote_address[0] if websocket.remote_address else "unknown"
+                # We don't know their listening port from the inbound socket, so store what we can
+                self.peer_registry[sender_identity.agent_id] = (sender_identity, f"ws://{peer_host}")
+                logger.info(f"Auto-registered handshake peer: {sender_identity.framework} ({sender_identity.agent_id})")
+            except (json.JSONDecodeError, Exception) as e:
+                logger.debug(f"Could not auto-register peer from handshake payload: {e}")
         
     async def _handle_state_sync(self, envelope: TPCPEnvelope, websocket: WebSocketServerProtocol) -> None:
         """Internal handler for merging CRDTSyncPayloads into local shared memory."""
@@ -185,12 +244,9 @@ class TPCPNode:
 
         payload = envelope.payload
         if payload.crdt_type == "LWW-Map":
-            # Pass the mathematically correct mathematical merge to the local CRDT
-            logger.info(f"Merging incoming LWW-Map semantic memory from {envelope.header.sender_id}...")
+            logger.info(f"Merging incoming LWW-Map from {envelope.header.sender_id}...")
             self.shared_memory.merge(payload.state)
-            
-            # Emit event conceptually via logging
-            logger.info(f"[Semantic State Updated] Current Memory: {self.shared_memory.to_dict()}")
+            logger.info(f"[Semantic State Updated] Memory: {self.shared_memory.to_dict()}")
         else:
             logger.warning(f"Unsupported CRDT type received: {payload.crdt_type}")
 
@@ -201,37 +257,38 @@ class TPCPNode:
             return
 
         payload = envelope.payload
-        logger.info(f"Ingesting dense semantic payload [{payload.model_id} | {payload.dimensions}d] from {envelope.header.sender_id}")
+        logger.info(f"Ingesting vector [{payload.model_id} | {payload.dimensions}d] from {envelope.header.sender_id}")
         
-        # Store in local vector bank directly, using the envelope ID as the reference key
         self.vector_bank.store_vector(
             payload_id=envelope.header.message_id,
             vector=payload.vector,
             model_id=payload.model_id,
             raw_text=payload.raw_text_fallback
         )
-        logger.info(f"[Vector Knowledge Inherited] Bank size is now {self.vector_bank.total_vectors}")
+        logger.info(f"[Vector Bank] Size is now {self.vector_bank.total_vectors}")
 
     async def send_message(self, target_id: UUID, intent: Intent, payload: Payload) -> None:
-        """Send a message to a specific peer in the registry."""
+        """
+        Sign and dispatch a TPCP message to a specific peer in the registry.
+        If delivery fails, the message is queued in the DLQ with exponential backoff retry.
+        """
         header = MessageHeader(
             sender_id=self.identity.agent_id,
             receiver_id=target_id,
             intent=intent
         )
         
-        # Auto-sign departing messages mathematically
+        # Sign the outgoing payload using this node's private key
         payload_dict = payload.model_dump()
         signature_str = self.identity_manager.sign_payload(payload_dict)
         
         envelope = TPCPEnvelope(header=header, payload=payload, signature=signature_str)
-
         await self._dispatch_envelope(target_id, envelope)
 
     async def _dispatch_envelope(self, target_id: UUID, envelope: TPCPEnvelope) -> None:
-        """Attempts to send an envelope. Queues it on drop, triggering exponential backoff."""
+        """Attempts to send an envelope. Queues it in DLQ on failure, triggering backoff reconnect."""
         if target_id not in self.peer_registry:
-            logger.error(f"Cannot send message. Peer {target_id} not in registry. Queueing to DLQ.")
+            logger.error(f"Peer {target_id} not in registry. Pushing to DLQ.")
             await self.message_queue.enqueue(target_id, envelope)
             return
 
@@ -240,15 +297,18 @@ class TPCPNode:
         try:
             async with websockets.client.connect(endpoint) as websocket:
                 await websocket.send(envelope.model_dump_json())
-                logger.debug(f"Message {envelope.header.message_id} sent to {target_id}.")
+                logger.debug(f"Sent message {envelope.header.message_id} to {target_id}.")
         except Exception as e:
-            logger.warning(f"Connection to {target_id} dropped: {e}. Pushing to DLQ and scheduling reconnect.")
+            logger.warning(f"Connection to {target_id} dropped: {e}. Pushing to DLQ.")
             await self.message_queue.enqueue(target_id, envelope)
-            # Spawn reconnection loop without blocking the main caller
-            self._loop.create_task(self._reconnect_and_drain(target_id))
+            loop = asyncio.get_event_loop()
+            loop.create_task(self._reconnect_and_drain(target_id))
 
     async def _reconnect_and_drain(self, target_id: UUID) -> None:
-        """Exponential backoff loop to reconnect and sequentially drain offline payloads."""
+        """
+        Exponential backoff reconnection loop. On success, drains DLQ one message at a time
+        to prevent silent data loss if the socket drops mid-drain.
+        """
         if target_id not in self.peer_registry:
             return
             
@@ -258,14 +318,21 @@ class TPCPNode:
         
         while await self.message_queue.has_messages(target_id):
             try:
-                # Attempt to open socket
                 async with websockets.client.connect(endpoint) as websocket:
-                    logger.info(f"[Network Restored] Connection to {target_id} re-established. Draining DLQ...")
+                    logger.info(f"[Network Restored] Re-established to {target_id}. Draining DLQ...")
                     
-                    messages = await self.message_queue.drain(target_id)
-                    for msg in messages:
-                        await websocket.send(msg.model_dump_json())
-                        logger.debug(f"Drained message {msg.header.message_id} to {target_id}.")
+                    # Drain and send one-at-a-time, re-queuing on failure to prevent data loss
+                    while await self.message_queue.has_messages(target_id):
+                        msg = await self.message_queue.dequeue_one(target_id)
+                        if msg is None:
+                            break
+                        try:
+                            await websocket.send(msg.model_dump_json())
+                            logger.debug(f"Drained message {msg.header.message_id} to {target_id}.")
+                        except Exception:
+                            # Re-queue the failed message at the front
+                            await self.message_queue.enqueue_front(target_id, msg)
+                            raise  # Trigger the outer backoff
                     break
             except Exception as e:
                 logger.debug(f"Reconnection to {target_id} failed: {e}. Retrying in {backoff}s...")
@@ -274,7 +341,8 @@ class TPCPNode:
 
     async def broadcast_discovery(self, seed_nodes: Optional[list[str]] = None) -> None:
         """
-        Send a base Handshake payload to a list of seed WebSocket URIs to discover peers.
+        Announce this node's identity to seed peers or via the A-DNS relay.
+        Generates a signed HANDSHAKE envelope containing the full AgentIdentity.
         """
         seed_nodes = seed_nodes or []
         target_id = UUID(int=0)
@@ -285,21 +353,21 @@ class TPCPNode:
             intent=Intent.HANDSHAKE
         )
         
-        # Embedding our identity as JSON string in text payload as a simple approach
+        # Embed the full identity JSON in a TextPayload so receivers can register us
         payload = TextPayload(content=self.identity.model_dump_json())
-        
-        payload_dict = payload.model_dump()
-        signature_str = self.identity_manager.sign_payload(payload_dict)
+        signature_str = self.identity_manager.sign_payload(payload.model_dump())
         
         envelope = TPCPEnvelope(header=header, payload=payload, signature=signature_str)
         serialized = envelope.model_dump_json()
         
-        if hasattr(self, '_adns_ws') and self._adns_ws:
+        # Send via A-DNS relay if connected
+        if self._adns_ws:
             try:
                 await self._adns_ws.send(serialized)
             except Exception as e:
                 logger.error(f"A-DNS broadcast failed: {e}")
                 
+        # Also send directly to any seed nodes
         if seed_nodes:
             logger.info(f"Broadcasting discovery to {len(seed_nodes)} seed nodes.")
             for address in seed_nodes:

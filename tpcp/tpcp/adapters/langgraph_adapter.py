@@ -17,22 +17,27 @@
 # For commercial licensing inquiries, see COMMERCIAL_LICENSE.md
 
 import json
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from uuid import UUID
 
 from tpcp.adapters.base import BaseFrameworkAdapter
 from tpcp.schemas.envelope import TPCPEnvelope, Intent, TextPayload
+from tpcp.security.crypto import AgentIdentityManager
 
 
 class LangGraphAdapter(BaseFrameworkAdapter):
     """
-    Adapter for parsing LangGraph state dictionaries into standardized TPCP envelopes.
+    Adapter for parsing LangGraph state dictionaries into standardized signed TPCP envelopes.
     LangGraph maintains explicit graph states (e.g., {"messages": [...], "status": "running"}).
     """
 
+    def __init__(self, agent_identity, identity_manager: Optional[AgentIdentityManager] = None):
+        super().__init__(agent_identity)
+        self.identity_manager = identity_manager
+
     async def pack_thought(self, native_output: Dict[str, Any], receiver_id: UUID, intent: Intent) -> TPCPEnvelope:
         """
-        Packages a LangGraph state graph dictionary into a TPCP envelope.
+        Packages a LangGraph state graph dictionary into a signed TPCP envelope.
         Currently serializes the entire state structure as JSON into a TextPayload.
         """
         if not isinstance(native_output, dict):
@@ -46,7 +51,11 @@ class LangGraphAdapter(BaseFrameworkAdapter):
         payload = TextPayload(content=content_str, language="en")
         header = self._create_header(receiver_id, intent)
 
-        return TPCPEnvelope(header=header, payload=payload)
+        signature = None
+        if self.identity_manager:
+            signature = self.identity_manager.sign_payload(payload.model_dump())
+
+        return TPCPEnvelope(header=header, payload=payload, signature=signature)
 
     async def unpack_payload(self, envelope: TPCPEnvelope) -> Dict[str, Any]:
         """
