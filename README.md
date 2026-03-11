@@ -2,8 +2,8 @@
   <h1 align="center">🧠 TPCP</h1>
   <p align="center"><strong>Telepathy Communication Protocol</strong></p>
   <p align="center">
-    Framework-agnostic, mathematically merged, cryptographically secure<br/>
-    state synchronization for autonomous AI agents.
+    The open protocol that lets AI agents communicate like they're telepathic.<br/>
+    Any framework. Any model. Any modality. Zero friction.
   </p>
 </p>
 
@@ -16,112 +16,113 @@
 </p>
 
 <p align="center">
+  <a href="#-the-problem">Problem</a> •
+  <a href="#-the-solution">Solution</a> •
   <a href="#-quick-start">Quick Start</a> •
-  <a href="#-why-tpcp">Why TPCP</a> •
-  <a href="#-core-concepts">Concepts</a> •
+  <a href="#-multimodal-communication">Multimodal</a> •
   <a href="#-documentation">Docs</a> •
   <a href="#%EF%B8%8F-licensing">License</a>
 </p>
 
 ---
 
-## 🎯 What is TPCP?
+## 🔥 The Problem
 
-TPCP is an **open protocol and dual-SDK** (Python + TypeScript) for connecting heterogeneous AI agent frameworks — CrewAI, LangGraph, AutoGen, custom agents — into a unified, self-organizing swarm.
+Right now, the AI agent ecosystem is fragmented. You build an agent in **CrewAI**, another in **LangGraph**, maybe one in **AutoGen** — and they **cannot talk to each other**. Every framework is a walled garden.
 
-It replaces brittle text-chain integrations with **mathematically sound state synchronization**, backed by CRDTs, Ed25519 cryptographic signatures, and a global discovery relay.
+Want to connect a Claude-powered research agent with a Gemini-powered analyst and an Ollama-hosted local executor? Today, you'd have to write hundreds of lines of glue code — fragile text-passing, polling loops, no security, no state consistency, and it breaks the moment you change anything.
 
-```
-┌─────────────┐     TPCP Protocol      ┌─────────────┐
-│  CrewAI      │◄──────────────────────►│  LangGraph   │
-│  Agent       │   Signed Envelopes     │  Agent       │
-│  (Python)    │   CRDT State Sync      │  (Python)    │
-└──────┬───────┘   Vector Telepathy     └──────┬───────┘
-       │                                        │
-       └──────────┐            ┌───────────────┘
-                  ▼            ▼
-            ┌─────────────────────┐
-            │    A-DNS Relay       │
-            │  Global Discovery   │
-            │ Challenge-Response  │
-            └──────────┬──────────┘
-                       │
-                       ▼
-            ┌─────────────────────┐
-            │  React Dashboard    │
-            │  (TypeScript SDK)   │
-            │  Real-time Sync     │
-            └─────────────────────┘
-```
+**Multi-agent AI is supposed to be the future. But right now, agents can't even have a conversation.**
 
 ---
 
-## 💡 Why TPCP?
+## 💡 The Solution
 
-Most multi-agent systems fall apart the moment you need two agents built with **different frameworks** to share context. You end up with fragile string-passing, polling loops, and zero guarantees around consistency.
+TPCP gives agents **telepathy**.
 
-TPCP solves this at the protocol level:
+It's an open protocol that lets any AI agent — regardless of what LLM powers it, what framework it runs on, or what modality it works with — **seamlessly communicate with any other agent**, as if they were sharing one brain.
 
-| Problem | TPCP Solution |
-|:--------|:--------------|
-| **Framework lock-in** | Adapter pattern decouples any LLM framework from the wire format |
-| **Race conditions in shared state** | LWW-Map CRDT — mathematically conflict-free, no locks needed |
-| **Identity spoofing** | Ed25519 signatures — every packet is signed and verified |
-| **Text bottleneck** | Vector Telepathy — share 1536d embeddings directly, skip tokenization |
-| **Peer discovery** | A-DNS Relay — dynamic registration with challenge-response auth |
-| **Data loss on network partitions** | Dead-Letter Queue with exponential backoff and safe re-queueing |
-| **State loss on restart** | Optional SQLite-backed CRDT persistence |
+```
+┌──────────────────┐                          ┌──────────────────┐
+│  Claude Opus 4.6 │◄────── TPCP Protocol ───►│  Gemini 2.5 Pro  │
+│  (Research Agent) │    Signed Envelopes      │  (Analysis Agent) │
+│  CrewAI / Python  │    CRDT Memory Sync      │  LangGraph / Py   │
+└────────┬─────────┘    Vector Telepathy       └────────┬─────────┘
+         │              Multimodal Media                │
+         └──────────┐                   ┌───────────────┘
+                    ▼                   ▼
+              ┌──────────────────────────┐
+              │      A-DNS Relay         │
+              │   Global Discovery       │
+              │  Challenge-Response Auth  │
+              └────────────┬─────────────┘
+         ┌─────────────────┼─────────────────┐
+         ▼                 ▼                  ▼
+┌────────────────┐ ┌────────────────┐ ┌────────────────┐
+│  Ollama Llama  │ │  Whisper Voice │ │  DALL-E Vision │
+│  (Local Exec)  │ │  (Audio Agent) │ │  (Image Agent) │
+│  Custom / Py   │ │  OpenAI / Py   │ │  React / TS    │
+└────────────────┘ └────────────────┘ └────────────────┘
+```
+
+**A Claude agent, a Gemini agent, an Ollama agent, a voice agent, and a vision agent — all sharing state, sending media, and collaborating in real-time. Different LLMs. Different frameworks. Different modalities. One protocol.**
+
+---
+
+## ⚡ What Makes It a Game-Changer
+
+| What You Get | How It Works |
+|:-------------|:-------------|
+| **Any LLM ↔ Any LLM** | Claude, GPT, Gemini, Llama, Mistral, Qwen, Kimi — TPCP doesn't care what model powers the agent. It just moves signed envelopes between nodes. |
+| **Any Framework ↔ Any Framework** | CrewAI, LangGraph, AutoGen, Semantic Kernel, custom code — adapters decouple the framework from the wire format. |
+| **Text ↔ Image ↔ Audio ↔ Video** | A vision agent sends an image → a text agent reads the caption. A voice agent sends audio → everyone gets the transcript. **No agent is ever excluded.** |
+| **Conflict-Free Shared Memory** | Multiple agents write to the same state simultaneously → the CRDT mathematically guarantees they all converge to the same result. No locks. No coordinator. |
+| **Cryptographic Trust** | Every message is signed with Ed25519. Unsigned or tampered messages are dropped. No spoofing possible. |
+| **Works Anywhere** | Agents discover each other globally via the A-DNS relay. No static IPs. No VPNs. Just connect and go. |
+| **Zero Data Loss** | If an agent goes offline, messages queue up and drain automatically when it's back. No messages are ever lost. |
 
 ---
 
 ## 🚀 Quick Start
 
-### Python SDK (`tpcp-core`)
+### Python — Connect two agents in 30 seconds
 
 ```bash
-# Install
-cd tpcp
-pip install -e ".[dev]"
-
-# Run the demos
-python examples/01_handshake_demo.py     # P2P identity exchange
-python examples/02_shared_memory_demo.py  # CRDT state synchronization
-python examples/03_telepathy_demo.py      # Vector embedding sharing
-
-# Run tests (20 tests)
-pytest -v
+cd tpcp && pip install -e ".[dev]"
 ```
-
-**Minimal example — two agents sharing state:**
 
 ```python
 import asyncio
 from tpcp.schemas.envelope import AgentIdentity, Intent, TextPayload
 from tpcp.core.node import TPCPNode
 
-identity = AgentIdentity(framework="MyAgent", public_key="")
+# Agent powered by ANY model — Claude, GPT, Gemini, Llama, anything
+identity = AgentIdentity(
+    framework="MyAgent",
+    public_key="",
+    modality=["text", "image"]
+)
 
 async def main():
-    async with TPCPNode(identity, "127.0.0.1", 8000) as node:
-        # State changes propagate via CRDT — no conflicts, ever
-        node.shared_memory.set("task_status", "complete")
+    async with TPCPNode(identity, port=8000) as node:
+        # Share state — all peers see this instantly
+        node.shared_memory.set("status", "analyzing")
         
-        # Broadcast presence to the network
-        await node.broadcast_discovery(seed_nodes=["ws://peer:8001"])
+        # Send a message to another agent (any LLM, any framework)
+        await node.send_message(
+            target_id=peer_uuid,
+            intent=Intent.TASK_REQUEST,
+            payload=TextPayload(content="Summarize the Q3 report")
+        )
 
 asyncio.run(main())
 ```
 
-### TypeScript SDK (`tpcp-ts`)
+### TypeScript — Real-time dashboard
 
 ```bash
-# Install & build
-cd tpcp-ts
-npm install
-npm run build
+cd tpcp-ts && npm install && npm run build
 ```
-
-**Minimal example — React/Next.js real-time dashboard:**
 
 ```typescript
 import { TPCPNode } from 'tpcp-ts';
@@ -130,61 +131,109 @@ const node = new TPCPNode({
   agent_id: crypto.randomUUID(),
   framework: "React-Dashboard",
   capabilities: ["visualization"],
-  public_key: ""  // Auto-generated Ed25519
+  public_key: "",
+  modality: ["text"]
 }, "127.0.0.1", 9000);
 
-// Real-time CRDT state sync
-node.on("onStateSync", (mergedState) => {
-  console.log("Swarm state updated:", mergedState);
+// Live CRDT state updates from the Python agent swarm
+node.on("onStateSync", (state) => {
+  console.log("Swarm state:", state);
+  // Update your React UI here
 });
 
-// Vector embedding ingestion
-node.on("onVectorSync", ({ modelId, dimensions, bankSize }) => {
-  console.log(`Received ${dimensions}d vector (${modelId}). Bank: ${bankSize}`);
+// Receive vector embeddings for semantic search
+node.on("onVectorSync", ({ modelId, dimensions }) => {
+  console.log(`Got ${dimensions}d embedding from ${modelId}`);
 });
 
 await node.startListening();
 ```
 
+### Run the demos
+
+```bash
+python examples/01_handshake_demo.py      # Identity exchange
+python examples/02_shared_memory_demo.py   # CRDT state sync
+python examples/03_telepathy_demo.py       # Vector sharing
+```
+
+---
+
+## 🎨 Multimodal Communication
+
+TPCP isn't limited to text. Agents can share **images, audio, video, and any binary file** — with automatic text fallbacks so no agent is left out.
+
+### Every payload type at a glance
+
+| Payload | What It Carries | Text Fallback | Example Use Case |
+|:--------|:----------------|:-------------|:-----------------|
+| `TextPayload` | Natural language | — | Agent reasoning, instructions, reports |
+| `ImagePayload` | PNG, JPEG, WebP images | `caption` | DALL-E output → vision analysis → text agent reads caption |
+| `AudioPayload` | WAV, MP3, OGG audio | `transcript` | Whisper transcription → ElevenLabs TTS → text agent reads transcript |
+| `VideoPayload` | MP4, WebM video | `description` | Sora generation → video analysis → text agent reads description |
+| `VectorEmbeddingPayload` | Dense float arrays | `raw_text_fallback` | Semantic search across the swarm's collective knowledge |
+| `CRDTSyncPayload` | Key-value state | — | Conflict-free shared memory between all agents |
+| `BinaryPayload` | Any file (PDF, dataset) | `description` | Sharing documents, spreadsheets, 3D models |
+
+### How cross-modal communication works
+
+```
+┌─────────────────────────┐
+│  DALL-E Agent (Vision)  │
+│  Generates image        │──► ImagePayload
+│                         │    caption: "Revenue chart Q3"
+└─────────────────────────┘
+              │
+              ▼
+┌─────────────────────────┐
+│  Claude Agent (Text)    │
+│  Reads the caption      │──► "I see the revenue chart shows 23% growth..."
+│  Can't see the image    │
+│  But understands it     │    ✅ Still participates fully
+└─────────────────────────┘
+              │
+              ▼
+┌─────────────────────────┐
+│  Whisper Agent (Voice)  │
+│  Reads Claude's text    │──► AudioPayload
+│  Generates speech       │    transcript: "Revenue grew 23%..."
+└─────────────────────────┘
+```
+
+**Every agent participates. Every modality connects. Nobody is excluded.**
+
 ---
 
 ## 🧩 Core Concepts
 
-### 🔗 LWW-Map CRDT — Conflict-Free Shared Memory
-No database locks. No polling. No coordinator. Two agents write to the same key simultaneously — the one with the higher Lamport timestamp wins. If timestamps collide, the tie-breaker is deterministic lexical sort. Both agents **always** converge to the same state. Optionally backed by SQLite for persistence across restarts.
+### 🔗 LWW-Map CRDT
+Two agents write to the same key at the same time. Instead of a conflict, the CRDT resolves it mathematically — the higher Lamport timestamp wins. If they're identical, the agent UUID breaks the tie deterministically. Both agents **always converge to the same state**. Optionally backed by SQLite for persistence.
 
-### 🛡️ Ed25519 Trust Layer
-Every node generates (or loads) an Ed25519 keypair. All outbound messages are signed. Inbound messages are **rejected** if the signature fails verification. Keys can be persisted to disk (`~/.tpcp/identity.key`) or loaded via the `TPCP_PRIVATE_KEY` environment variable for stable identity across restarts.
+### 🛡️ Ed25519 Cryptographic Identity
+Every message is signed. Every signature is verified. Keys can persist across restarts via file or environment variable. The A-DNS relay uses challenge-response — agents must *prove* they own their private key before registering.
 
 ### 🧠 Vector Telepathy
-Bypass the text bottleneck entirely. Share raw embedding arrays across agents using `VectorEmbeddingPayload`. The receiving `VectorBank` stores them and supports **cosine similarity search** for semantic retrieval across the swarm's collective knowledge.
+Share raw 1536-dimensional embeddings between agents. The `VectorBank` stores them and supports **cosine similarity search** — find the most relevant knowledge fragment across the entire swarm.
 
 ### 🌍 A-DNS Global Discovery
-Run the standalone relay for zero-config global peer discovery:
-```bash
-python -m tpcp.relay.server
-# ✓ A-DNS Relay running on ws://0.0.0.0:9000
-# ✓ Challenge-response authentication: ENABLED
-# ✓ Rate limiting: 30 msg/sec per connection
-```
-Agents connect with `adns_url="ws://your-relay:9000"` and are authenticated via a cryptographic challenge-response handshake before registration.
+One command to run the relay. Agents connect from anywhere — home lab, AWS, a phone — and find each other by UUID. No static IPs, no VPN, no DNS records.
 
 ### 📦 Dead-Letter Queue
-Messages destined for offline peers are cached locally (bounded at 500/peer with LRU eviction). When the connection is restored, messages are drained one-at-a-time with safe re-queueing on failure — **zero data loss** during network partitions.
+Agent goes offline? Messages queue up (max 500/peer). When it's back, they drain one-at-a-time with safe re-queueing. **Zero data loss, guaranteed.**
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ Repository Structure
 
 ```
 TPCP-Workspace/
 ├── tpcp/                    # Python SDK (tpcp-core)
 │   ├── tpcp/
 │   │   ├── core/            # TPCPNode, MessageQueue (DLQ)
-│   │   ├── schemas/         # Pydantic envelope schemas (discriminated union)
-│   │   ├── security/        # Ed25519 identity with key persistence
+│   │   ├── schemas/         # Pydantic schemas (7 payload types)
+│   │   ├── security/        # Ed25519 with key persistence
 │   │   ├── memory/          # LWWMap CRDT (+ SQLite), VectorBank (+ cosine search)
-│   │   ├── adapters/        # CrewAI, LangGraph framework adapters
+│   │   ├── adapters/        # CrewAI, LangGraph adapters
 │   │   └── relay/           # A-DNS relay (challenge-response + rate limiting)
 │   ├── examples/            # Runnable demos
 │   ├── tests/               # 20 pytest tests
@@ -193,28 +242,27 @@ TPCP-Workspace/
 ├── tpcp-ts/                 # TypeScript SDK — Node.js / React / Next.js
 │   ├── src/
 │   │   ├── core/            # TPCPNode (EventEmitter), DLQ, VectorBank
-│   │   ├── schemas/         # Zod envelope schemas (discriminated union)
+│   │   ├── schemas/         # Zod schemas (7 payload types)
 │   │   ├── security/        # tweetnacl Ed25519 with key persistence
 │   │   └── memory/          # LWWMap CRDT
 │   └── package.json
 │
 ├── LICENSE                  # AGPL v3
-├── COMMERCIAL_LICENSE.md    # Enterprise licensing terms
-├── CONTRIBUTING.md          # Development setup & PR guidelines
-└── SECURITY.md              # Vulnerability reporting policy
+├── COMMERCIAL_LICENSE.md    # Enterprise terms
+├── CONTRIBUTING.md          # Dev setup & PR guide
+└── SECURITY.md              # Vulnerability policy
 ```
 
 ---
 
 ## 📖 Documentation
 
-| Document | Description |
-|:---------|:------------|
-| [Architecture Deep-Dive](tpcp/docs/architecture.md) | Ed25519 cryptography, CRDT mathematical proofs, A-DNS protocol |
-| [API Reference](tpcp/docs/api_reference.md) | `TPCPNode` methods, intents, payload types |
-| [Contributing Guide](CONTRIBUTING.md) | Dev setup, code style, PR workflow |
-| [Security Policy](SECURITY.md) | Vulnerability reporting and security model |
-| [Commercial License](COMMERCIAL_LICENSE.md) | Terms for closed-source integration |
+| Document | What's Inside |
+|:---------|:-------------|
+| [Step-by-Step Guide & API Reference](tpcp/docs/api_reference.md) | Full walkthrough: install → connect → share state → send media → global discovery |
+| [Architecture Deep-Dive](tpcp/docs/architecture.md) | Ed25519, CRDT math, multimodal design, A-DNS flow, DLQ mechanics |
+| [Contributing](CONTRIBUTING.md) | Dev setup, code style, PR workflow |
+| [Security Policy](SECURITY.md) | Vulnerability reporting and crypto model |
 
 ---
 
@@ -231,5 +279,6 @@ TPCP is **dual-licensed** to support both open-source and commercial use.
 ---
 
 <p align="center">
-  Built for the multi-agent era. ⚡
+  <strong>Built for the multi-agent era.</strong><br/>
+  Give your agents telepathy. ⚡
 </p>

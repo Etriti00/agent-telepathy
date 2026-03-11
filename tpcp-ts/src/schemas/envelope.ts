@@ -25,6 +25,7 @@ export enum Intent {
   TASK_REQUEST = "Task_Request",
   STATE_SYNC = "State_Sync",
   STATE_SYNC_VECTOR = "State_Sync_Vector",
+  MEDIA_SHARE = "Media_Share",
   CRITIQUE = "Critique",
   TERMINATE = "Terminate"
 }
@@ -35,7 +36,8 @@ export const AgentIdentitySchema = z.object({
   agent_id: z.string().uuid(),
   framework: z.string(),
   capabilities: z.array(z.string()),
-  public_key: z.string()
+  public_key: z.string(),
+  modality: z.array(z.string()).default(["text"])
 });
 export type AgentIdentity = z.infer<typeof AgentIdentitySchema>;
 
@@ -67,14 +69,12 @@ export const VectorEmbeddingPayloadSchema = z.object({
   raw_text_fallback: z.string().nullable().optional()
 }).refine(data => {
   if (data.vector.length !== data.dimensions) return false;
-  
   const KNOWN_MODELS: Record<string, number> = {
     "text-embedding-3-small": 1536,
     "text-embedding-3-large": 3072,
     "text-embedding-ada-002": 1536,
     "all-MiniLM-L6-v2": 384
   };
-  
   if (KNOWN_MODELS[data.model_id]) {
     return data.dimensions === KNOWN_MODELS[data.model_id];
   }
@@ -92,11 +92,62 @@ export const CRDTSyncPayloadSchema = z.object({
 });
 export type CRDTSyncPayload = z.infer<typeof CRDTSyncPayloadSchema>;
 
-// Discriminated union via payload_type field
+// ── MULTIMODAL PAYLOAD TYPES ──────────────────────────────────────────
+
+export const ImagePayloadSchema = z.object({
+  payload_type: z.literal("image").default("image"),
+  data_base64: z.string(),
+  mime_type: z.string().default("image/png"),
+  width: z.number().int().positive().nullable().optional(),
+  height: z.number().int().positive().nullable().optional(),
+  source_model: z.string().nullable().optional(),
+  caption: z.string().nullable().optional()
+});
+export type ImagePayload = z.infer<typeof ImagePayloadSchema>;
+
+export const AudioPayloadSchema = z.object({
+  payload_type: z.literal("audio").default("audio"),
+  data_base64: z.string(),
+  mime_type: z.string().default("audio/wav"),
+  sample_rate: z.number().int().positive().nullable().optional(),
+  duration_seconds: z.number().positive().nullable().optional(),
+  source_model: z.string().nullable().optional(),
+  transcript: z.string().nullable().optional()
+});
+export type AudioPayload = z.infer<typeof AudioPayloadSchema>;
+
+export const VideoPayloadSchema = z.object({
+  payload_type: z.literal("video").default("video"),
+  data_base64: z.string(),
+  mime_type: z.string().default("video/mp4"),
+  width: z.number().int().positive().nullable().optional(),
+  height: z.number().int().positive().nullable().optional(),
+  duration_seconds: z.number().positive().nullable().optional(),
+  fps: z.number().positive().nullable().optional(),
+  source_model: z.string().nullable().optional(),
+  description: z.string().nullable().optional()
+});
+export type VideoPayload = z.infer<typeof VideoPayloadSchema>;
+
+export const BinaryPayloadSchema = z.object({
+  payload_type: z.literal("binary").default("binary"),
+  data_base64: z.string(),
+  mime_type: z.string().default("application/octet-stream"),
+  filename: z.string().nullable().optional(),
+  description: z.string().nullable().optional()
+});
+export type BinaryPayload = z.infer<typeof BinaryPayloadSchema>;
+
+// ── DISCRIMINATED UNION ───────────────────────────────────────────────
+
 export const PayloadSchema = z.discriminatedUnion("payload_type", [
   TextPayloadSchema,
   VectorEmbeddingPayloadSchema as any,
   CRDTSyncPayloadSchema,
+  ImagePayloadSchema,
+  AudioPayloadSchema,
+  VideoPayloadSchema,
+  BinaryPayloadSchema,
 ]);
 
 export type PayloadType = z.infer<typeof PayloadSchema>;
