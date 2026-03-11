@@ -29,6 +29,8 @@ export enum Intent {
   TERMINATE = "Terminate"
 }
 
+export const PROTOCOL_VERSION = "0.2.0";
+
 export const AgentIdentitySchema = z.object({
   agent_id: z.string().uuid(),
   framework: z.string(),
@@ -39,21 +41,26 @@ export type AgentIdentity = z.infer<typeof AgentIdentitySchema>;
 
 export const MessageHeaderSchema = z.object({
   message_id: z.string().uuid(),
-  timestamp: z.string().datetime(),
+  timestamp: z.string(),
   sender_id: z.string().uuid(),
   receiver_id: z.string().uuid(),
   intent: z.nativeEnum(Intent),
-  ttl: z.number().int().min(0).default(30)
+  ttl: z.number().int().min(0).default(30),
+  protocol_version: z.string().default(PROTOCOL_VERSION)
 });
 export type MessageHeader = z.infer<typeof MessageHeaderSchema>;
 
+// ── DISCRIMINATED PAYLOAD TYPES ────────────────────────────────────────
+
 export const TextPayloadSchema = z.object({
+  payload_type: z.literal("text").default("text"),
   content: z.string(),
   language: z.string().default("en")
 });
 export type TextPayload = z.infer<typeof TextPayloadSchema>;
 
 export const VectorEmbeddingPayloadSchema = z.object({
+  payload_type: z.literal("vector_embedding").default("vector_embedding"),
   model_id: z.string(),
   dimensions: z.number().int().positive(),
   vector: z.array(z.number()),
@@ -78,17 +85,18 @@ export const VectorEmbeddingPayloadSchema = z.object({
 export type VectorEmbeddingPayload = z.infer<typeof VectorEmbeddingPayloadSchema>;
 
 export const CRDTSyncPayloadSchema = z.object({
+  payload_type: z.literal("crdt_sync").default("crdt_sync"),
   crdt_type: z.string(),
   state: z.record(z.string(), z.any()),
   vector_clock: z.record(z.string(), z.number().int())
 });
 export type CRDTSyncPayload = z.infer<typeof CRDTSyncPayloadSchema>;
 
-export const PayloadSchema = z.union([
-  VectorEmbeddingPayloadSchema,
-  CRDTSyncPayloadSchema,
+// Discriminated union via payload_type field
+export const PayloadSchema = z.discriminatedUnion("payload_type", [
   TextPayloadSchema,
-  z.record(z.string(), z.any())
+  VectorEmbeddingPayloadSchema as any,
+  CRDTSyncPayloadSchema,
 ]);
 
 export type PayloadType = z.infer<typeof PayloadSchema>;

@@ -16,25 +16,83 @@
 # 
 # For commercial licensing inquiries, see COMMERCIAL_LICENSE.md
 
-from typing import Any, Dict, Tuple, Optional
+"""
+Last-Writer-Wins Map (LWW-Map) CRDT implementation.
+Supports in-memory operation and optional SQLite persistence for durable state across restarts.
+"""
+
+import json
+import sqlite3
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple
+
 
 class LWWMap:
-    def __init__(self, node_id: str):
-        """
-        Initializes a Last-Writer-Wins Map (LWW-Map).
-        Uses Lamport logical clocks to resolve concurrent updates deterministically.
-        """
+    """
+    A Last-Writer-Wins Map using Lamport logical clocks for deterministic conflict resolution.
+    
+    Properties:
+    - Commutativity: merge(A, B) == merge(B, A)
+    - Associativity: merge(merge(A, B), C) == merge(A, merge(B, C))
+    - Idempotence: merge(A, A) == A
+    
+    Optional SQLite persistence:
+        crdt = LWWMap(node_id="agent-1", db_path=Path(".tpcp/memory.db"))
+    """
+    
+    def __init__(self, node_id: str, db_path: Optional[Path] = None):
         self.node_id = node_id
-        # Maps key -> (value, logical_timestamp, writer_node_id)
-        # Storing writer_node_id allows deterministic tie-breaking.
         self._state: Dict[str, Tuple[Any, int, str]] = {}
         self.logical_clock = 0
+        
+        # Optional SQLite persistence
+        self._db_path = db_path
+        self._conn: Optional[sqlite3.Connection] = None
+        
+        if db_path:
+            self._init_db(db_path)
+            self._hydrate_from_db()
+
+    def _init_db(self, db_path: Path) -> None:
+        """Initialize SQLite database for persistent CRDT state."""
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._conn = sqlite3.connect(str(db_path))
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS lww_map (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                writer_id TEXT NOT NULL
+            )
+        """)
+        self._conn.commit()
+
+    def _hydrate_from_db(self) -> None:
+        """Load existing state from SQLite on startup."""
+        if not self._conn:
+            return
+        cursor = self._conn.execute("SELECT key, value, timestamp, writer_id FROM lww_map")
+        for row in cursor:
+            key, value_json, ts, writer = row
+            value = json.loads(value_json)
+            self._state[key] = (value, ts, writer)
+            self.logical_clock = max(self.logical_clock, ts)
+
+    def _persist(self, key: str, value: Any, timestamp: int, writer_id: str) -> None:
+        """Write-through to SQLite on mutation."""
+        if not self._conn:
+            return
+        value_json = json.dumps(value, default=str)
+        self._conn.execute(
+            "INSERT OR REPLACE INTO lww_map (key, value, timestamp, writer_id) VALUES (?, ?, ?, ?)",
+            (key, value_json, timestamp, writer_id)
+        )
+        self._conn.commit()
 
     def set(self, key: str, value: Any, timestamp: Optional[int] = None, writer_id: Optional[str] = None) -> None:
         """
         Sets a key to a value in the map.
         If a timestamp is not provided, increments the logical clock.
-        If provided, advances the local logical clock to match the incoming time if it's greater.
         """
         if timestamp is None:
             self.logical_clock += 1
@@ -45,25 +103,28 @@ class LWWMap:
             if writer_id is None:
                 writer_id = self.node_id
 
+        updated = False
+
         if key in self._state:
             existing_value, existing_ts, existing_writer = self._state[key]
             
-            # 1. Compare logical timestamps
             if timestamp > existing_ts:
                 self._state[key] = (value, timestamp, writer_id)
-            # 2. Tie-breaker if perfectly concurrent (same timestamp)
+                updated = True
             elif timestamp == existing_ts:
-                # Deterministic resolution: lexically compare writer_ids to break the tie
                 if writer_id > existing_writer:
                     self._state[key] = (value, timestamp, writer_id)
+                    updated = True
                 elif writer_id == existing_writer:
-                    # Same writer, same timestamp. For idempotence, we can just overwrite,
-                    # or compare values. We'll compare stringified values to be strictly deterministic.
                     if str(value) > str(existing_value):
                         self._state[key] = (value, timestamp, writer_id)
+                        updated = True
         else:
-            # Key does not exist, safe to insert
             self._state[key] = (value, timestamp, writer_id)
+            updated = True
+
+        if updated:
+            self._persist(key, value, timestamp, writer_id)
 
     def get(self, key: str) -> Any:
         """Returns the mapped value for the given key, or None if absent."""
@@ -73,9 +134,8 @@ class LWWMap:
 
     def merge(self, other_state: Dict[str, Dict[str, Any]]) -> None:
         """
-        Receives a serialized CRDT state dictionary from another node.
-        Applies mathematical properties of Commutativity, Associativity, and Idempotence to merge.
-        Format expected: { key: { "value": Any, "timestamp": int, "writer_id": str } }
+        Merges a serialized CRDT state from another node.
+        Format: { key: { "value": Any, "timestamp": int, "writer_id": str } }
         """
         for key, record in other_state.items():
             self.set(
@@ -90,11 +150,14 @@ class LWWMap:
         return {k: v[0] for k, v in self._state.items()}
 
     def serialize_state(self) -> Dict[str, Dict[str, Any]]:
-        """
-        Serializes the internal state for TPCP transport.
-        Returns: { key: {"value": Any, "timestamp": int, "writer_id": str} }
-        """
+        """Serializes the internal state for TPCP transport."""
         return {
             key: {"value": val, "timestamp": ts, "writer_id": writer}
             for key, (val, ts, writer) in self._state.items()
         }
+
+    def close(self) -> None:
+        """Close the SQLite connection if open."""
+        if self._conn:
+            self._conn.close()
+            self._conn = None

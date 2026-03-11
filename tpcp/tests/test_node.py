@@ -1,10 +1,15 @@
 import pytest
 import asyncio
+import tempfile
+from pathlib import Path
 from uuid import uuid4
 
-from tpcp.schemas.envelope import AgentIdentity, Intent, TextPayload
+from tpcp.schemas.envelope import AgentIdentity, Intent, TextPayload, CRDTSyncPayload, VectorEmbeddingPayload
 from tpcp.core.node import TPCPNode
+from tpcp.core.queue import MessageQueue
 from tpcp.security.crypto import AgentIdentityManager
+from tpcp.memory.crdt import LWWMap
+from tpcp.memory.vector import VectorBank
 
 
 def make_node(port: int) -> TPCPNode:
@@ -14,34 +19,30 @@ def make_node(port: int) -> TPCPNode:
         framework="NodeTest",
         public_key=identity_manager.get_public_key_string()
     )
-    node = TPCPNode(identity=identity, host="127.0.0.1", port=port)
-    return node
+    return TPCPNode(identity=identity, host="127.0.0.1", port=port, identity_manager=identity_manager)
 
+
+# ── NODE TESTS ───────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
 async def test_node_initialization():
-    node = make_node(9000)
-    
+    node = make_node(9100)
     assert node.host == "127.0.0.1"
-    assert node.port == 9000
+    assert node.port == 9100
     assert len(node.peer_registry) == 0
-    # Node should have auto-generated a real Ed25519 public key
-    assert len(node.identity.public_key) > 0
-    assert node.identity.public_key != "test_key"
+    assert len(node.identity.public_key) > 10  # Real Ed25519 key
 
 
 @pytest.mark.asyncio
 async def test_peer_registration():
-    node = make_node(9000)
-    
+    node = make_node(9101)
     peer_manager = AgentIdentityManager()
     peer_identity = AgentIdentity(
         framework="PeerTest",
         public_key=peer_manager.get_public_key_string()
     )
-    peer_address = "ws://127.0.0.1:9001"
     
-    node.register_peer(peer_identity, peer_address)
+    node.register_peer(peer_identity, "ws://127.0.0.1:9102")
     assert peer_identity.agent_id in node.peer_registry
     
     node.remove_peer(peer_identity.agent_id)
@@ -49,41 +50,212 @@ async def test_peer_registration():
 
 
 @pytest.mark.asyncio
-async def test_message_sending_unknown_peer():
-    """Messages to unknown peers must be enqueued to the DLQ, not dropped silently."""
-    node = make_node(9000)
-    
+async def test_message_dlq_on_unknown_peer():
+    node = make_node(9103)
     target_id = uuid4()
-    await node.send_message(
-        target_id=target_id,
-        intent=Intent.TASK_REQUEST,
-        payload=TextPayload(content="test")
-    )
-    
+    await node.send_message(target_id, Intent.TASK_REQUEST, TextPayload(content="test"))
     assert await node.message_queue.has_messages(target_id)
 
 
 @pytest.mark.asyncio
+async def test_async_context_manager():
+    identity = AgentIdentity(framework="CtxTest", public_key="placeholder")
+    node = TPCPNode(identity=identity, host="127.0.0.1", port=9104)
+    
+    async with node as n:
+        assert n._running is True
+    assert n._running is False
+
+
+# ── CRYPTO TESTS ─────────────────────────────────────────────────────
+
+def test_sign_verify_roundtrip():
+    mgr = AgentIdentityManager()
+    payload = {"key": "value", "nested": {"a": 1}}
+    
+    signature = mgr.sign_payload(payload)
+    public_key = mgr.get_public_key_string()
+    
+    assert AgentIdentityManager.verify_signature(public_key, signature, payload)
+
+
+def test_verify_rejects_tampered():
+    mgr = AgentIdentityManager()
+    payload = {"key": "value"}
+    
+    signature = mgr.sign_payload(payload)
+    public_key = mgr.get_public_key_string()
+    
+    tampered = {"key": "TAMPERED"}
+    assert not AgentIdentityManager.verify_signature(public_key, signature, tampered)
+
+
+def test_sign_bytes_roundtrip():
+    mgr = AgentIdentityManager()
+    data = b"hello-nonce-12345"
+    
+    sig = mgr.sign_bytes(data)
+    pub = mgr.get_public_key_string()
+    
+    assert AgentIdentityManager.verify_bytes(pub, sig, data)
+    assert not AgentIdentityManager.verify_bytes(pub, sig, b"wrong-data")
+
+
+def test_key_persistence():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        key_path = Path(tmpdir) / "test.key"
+        
+        # Generate and save
+        mgr1 = AgentIdentityManager(key_path=key_path, auto_save=True)
+        pub1 = mgr1.get_public_key_string()
+        
+        # Load from file
+        mgr2 = AgentIdentityManager(key_path=key_path)
+        pub2 = mgr2.get_public_key_string()
+        
+        assert pub1 == pub2
+        assert mgr2.was_loaded is True
+
+
+# ── DLQ TESTS ────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
 async def test_dlq_max_size_eviction():
-    """DLQ should not grow indefinitely — oldest messages are evicted when full."""
-    from tpcp.core.queue import MessageQueue
-    from tpcp.schemas.envelope import MessageHeader, TPCPEnvelope, TextPayload
+    from tpcp.schemas.envelope import MessageHeader, TPCPEnvelope
     
     queue = MessageQueue(max_size_per_peer=3)
     target_id = uuid4()
     
-    node = make_node(9000)
-    
     for i in range(5):
         payload = TextPayload(content=f"msg {i}")
-        header = MessageHeader(
-            sender_id=node.identity.agent_id,
-            receiver_id=target_id,
-            intent=Intent.TASK_REQUEST
-        )
+        header = MessageHeader(sender_id=uuid4(), receiver_id=target_id, intent=Intent.TASK_REQUEST)
         envelope = TPCPEnvelope(header=header, payload=payload)
         await queue.enqueue(target_id, envelope)
     
-    # After 5 enqueues with max_size=3, only 3 most recent should remain
     messages = await queue.drain(target_id)
     assert len(messages) == 3
+
+
+@pytest.mark.asyncio
+async def test_dlq_enqueue_front():
+    from tpcp.schemas.envelope import MessageHeader, TPCPEnvelope
+    
+    queue = MessageQueue(max_size_per_peer=100)
+    target_id = uuid4()
+    
+    # Enqueue msg_1 then msg_2
+    for i in range(2):
+        payload = TextPayload(content=f"msg_{i}")
+        header = MessageHeader(sender_id=uuid4(), receiver_id=target_id, intent=Intent.TASK_REQUEST)
+        envelope = TPCPEnvelope(header=header, payload=payload)
+        await queue.enqueue(target_id, envelope)
+    
+    # Dequeue one (should be msg_0)
+    msg = await queue.dequeue_one(target_id)
+    assert msg is not None
+    
+    # Re-enqueue at front
+    await queue.enqueue_front(target_id, msg)
+    
+    # Next dequeue should be the same message again
+    msg2 = await queue.dequeue_one(target_id)
+    assert msg2.header.message_id == msg.header.message_id
+
+
+# ── CRDT TESTS ───────────────────────────────────────────────────────
+
+def test_lwwmap_basic_set_get():
+    crdt = LWWMap(node_id="agent-a")
+    crdt.set("key1", "value1")
+    assert crdt.get("key1") == "value1"
+
+
+def test_lwwmap_last_writer_wins():
+    crdt = LWWMap(node_id="agent-a")
+    crdt.set("key1", "old", timestamp=1, writer_id="agent-a")
+    crdt.set("key1", "new", timestamp=2, writer_id="agent-b")
+    assert crdt.get("key1") == "new"
+
+
+def test_lwwmap_merge():
+    a = LWWMap(node_id="a")
+    b = LWWMap(node_id="b")
+    
+    a.set("x", 1, timestamp=1, writer_id="a")
+    b.set("y", 2, timestamp=2, writer_id="b")
+    
+    a.merge(b.serialize_state())
+    
+    assert a.get("x") == 1
+    assert a.get("y") == 2
+
+
+def test_lwwmap_commutativity():
+    """merge(A, B) == merge(B, A)"""
+    a = LWWMap(node_id="a")
+    b = LWWMap(node_id="b")
+    
+    a.set("shared", "from-a", timestamp=5, writer_id="a")
+    b.set("shared", "from-b", timestamp=5, writer_id="b")
+    
+    # A merges B
+    ab = LWWMap(node_id="test")
+    ab.merge(a.serialize_state())
+    ab.merge(b.serialize_state())
+    
+    # B merges A  
+    ba = LWWMap(node_id="test")
+    ba.merge(b.serialize_state())
+    ba.merge(a.serialize_state())
+    
+    assert ab.to_dict() == ba.to_dict()
+
+
+def test_lwwmap_sqlite_persistence():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "memory.db"
+        
+        crdt1 = LWWMap(node_id="agent-1", db_path=db_path)
+        crdt1.set("key1", "hello")
+        crdt1.set("key2", {"nested": True})
+        crdt1.close()
+        
+        # Reload from disk
+        crdt2 = LWWMap(node_id="agent-1", db_path=db_path)
+        assert crdt2.get("key1") == "hello"
+        assert crdt2.get("key2") == {"nested": True}
+        crdt2.close()
+
+
+# ── VECTOR BANK TESTS ────────────────────────────────────────────────
+
+def test_vectorbank_store_and_retrieve():
+    bank = VectorBank(node_id="test")
+    pid = uuid4()
+    bank.store_vector(pid, [1.0, 0.0, 0.0], "test-model")
+    
+    result = bank.get_vector(pid)
+    assert result is not None
+    assert result["model_id"] == "test-model"
+
+
+def test_vectorbank_cosine_search():
+    bank = VectorBank(node_id="test")
+    
+    pid1 = uuid4()
+    pid2 = uuid4()
+    pid3 = uuid4()
+    
+    bank.store_vector(pid1, [1.0, 0.0, 0.0], "test", raw_text="east")
+    bank.store_vector(pid2, [0.0, 1.0, 0.0], "test", raw_text="north")
+    bank.store_vector(pid3, [0.9, 0.1, 0.0], "test", raw_text="mostly-east")
+    
+    # Query: pure east
+    results = bank.search([1.0, 0.0, 0.0], top_k=2)
+    
+    assert len(results) == 2
+    # First result should be the exact match (similarity ≈ 1.0)
+    assert results[0][0] == pid1
+    assert results[0][1] > 0.99
+    # Second should be "mostly-east"
+    assert results[1][0] == pid3
