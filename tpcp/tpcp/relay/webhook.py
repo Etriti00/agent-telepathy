@@ -49,7 +49,7 @@ app = FastAPI(title="TPCP Stateless Webhook Gateway", version=PROTOCOL_VERSION)
 # Global runtime variables allowing instantiation integration natively
 _gateway_identity: Optional[AgentIdentity] = None
 _identity_manager: Optional[AgentIdentityManager] = None
-_on_webhook_inbound_callback = None
+_local_tpcp_node = None
 
 
 class WebhookIntentRequest(BaseModel):
@@ -59,15 +59,15 @@ class WebhookIntentRequest(BaseModel):
     text: str
 
 
-def configure_gateway(identity: AgentIdentity, identity_manager: AgentIdentityManager, bridge_callback):
+def configure_gateway(identity: AgentIdentity, identity_manager: AgentIdentityManager, tpcp_node):
     """
     Initializes the Webhook Gateway globals.
     Required before running `uvicorn.run(app, ...)`
     """
-    global _gateway_identity, _identity_manager, _on_webhook_inbound_callback
+    global _gateway_identity, _identity_manager, _local_tpcp_node
     _gateway_identity = identity
     _identity_manager = identity_manager
-    _on_webhook_inbound_callback = bridge_callback
+    _local_tpcp_node = tpcp_node
     logger.info("Stateless Webhook Gateway successfully configured with Identity bindings.")
 
 
@@ -77,7 +77,7 @@ async def trigger_swarm_intent(req: WebhookIntentRequest):
     HTTP POST trigger. Wraps raw API calls securely inside a signed TPCP TextPayload Envelope.
     Ideal for Siri Shortcuts or Zapier external injection.
     """
-    if not _gateway_identity or not _identity_manager or not _on_webhook_inbound_callback:
+    if not _gateway_identity or not _identity_manager or not _local_tpcp_node:
         raise HTTPException(status_code=500, detail="Stateless Webhook Gateway has not been configured securely.")
 
     try:
@@ -105,10 +105,11 @@ async def trigger_swarm_intent(req: WebhookIntentRequest):
 
     try:
         # Route the securely validated Envelope to the main TPCP swarm logic node.
-        if asyncio.iscoroutinefunction(_on_webhook_inbound_callback):
-            await _on_webhook_inbound_callback(envelope)
+        if _local_tpcp_node:
+            await _local_tpcp_node.send_message(t_id, req.intent, payload)
         else:
-            _on_webhook_inbound_callback(envelope)
+            raise HTTPException(status_code=500, detail="Local TPCP Node not attached.")
+            
             
         return {"status": "success", "message_id": str(header.message_id), "dispatched_to_swarm": True}
     except Exception as e:
@@ -120,3 +121,39 @@ async def trigger_swarm_intent(req: WebhookIntentRequest):
 async def get_health():
     """Simple health checking for AWS/GCP ALBs."""
     return {"status": "ok", "version": PROTOCOL_VERSION, "gateway_active": _gateway_identity is not None}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    import asyncio
+    import os
+    
+    # Standalone execution example for the webhook gateway
+    async def run_gateway():
+        # Instantiate identity manager and TPCP node natively
+        identity_mgr = AgentIdentityManager(auto_save=False)
+        identity = AgentIdentity(
+            framework="FastAPI-Webhook-Gateway",
+            public_key=identity_mgr.public_key_base64,
+            capabilities=["http-bridge"]
+        )
+        
+        from tpcp.core.node import TPCPNode
+        node = TPCPNode(identity, port=8080, identity_manager=identity_mgr)
+        
+        # Configure and bind the webhook globals to this local node
+        configure_gateway(identity, identity_mgr, node)
+        
+        # Start node networking
+        await node.start_listening()
+        
+        # Start API server in background
+        config = uvicorn.Config(app, host="0.0.0.0", port=5000, log_level="info")
+        server = uvicorn.Server(config)
+        
+        try:
+            await server.serve()
+        finally:
+            await node.stop_listening()
+
+    asyncio.run(run_gateway())
