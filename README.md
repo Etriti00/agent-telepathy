@@ -12,7 +12,7 @@
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white" alt="Python 3.11+"></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-Ready-3178c6?logo=typescript&logoColor=white" alt="TypeScript"></a>
   <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
-  <img src="https://img.shields.io/badge/version-0.2.0-orange" alt="Version 0.2.0">
+  <img src="https://img.shields.io/badge/version-0.3.0-orange" alt="Version 0.3.0">
 </p>
 
 <p align="center">
@@ -80,15 +80,18 @@ It's an open protocol that lets any AI agent — regardless of what LLM powers i
 | **Cryptographic Trust** | Every message is signed with Ed25519. Unsigned or tampered messages are dropped. No spoofing possible. |
 | **Works Anywhere** | Agents discover each other globally via the A-DNS relay. No static IPs. No VPNs. Just connect and go. |
 | **Zero Data Loss** | If an agent goes offline, messages queue up and drain automatically when it's back. No messages are ever lost. |
+| **Universal Edge Bridging** | Bridge autonomous robots (ROS2), Smart Homes (HomeAssistant/Matter), Industrial Sensors (MQTT), and Zapier/Siri Webhooks natively into the swarm constraint-free. |
 
 ---
 
 ## 🚀 Quick Start
 
-### Python — Connect two agents in 30 seconds
+### Python — Connect agents, robotics, and smart homes
 
 ```bash
-cd tpcp && pip install -e ".[dev]"
+cd tpcp
+pip install -e ".[dev]"
+pip install "tpcp-core[edge]"  # Required for Edge hardware adapters (ROS2, MQTT, HA, Webhook)
 ```
 
 ```python
@@ -233,8 +236,8 @@ TPCP-Workspace/
 │   │   ├── schemas/         # Pydantic schemas (7 payload types)
 │   │   ├── security/        # Ed25519 with key persistence
 │   │   ├── memory/          # LWWMap CRDT (+ SQLite), VectorBank (+ cosine search)
-│   │   ├── adapters/        # CrewAI, LangGraph adapters
-│   │   └── relay/           # A-DNS relay (challenge-response + rate limiting)
+│   │   ├── adapters/        # CrewAI, LangGraph, ROS2, HomeAssistant, MQTT adapters
+│   │   └── relay/           # A-DNS relay & FastAPI Webhook Gateway
 │   ├── examples/            # Runnable demos
 │   ├── tests/               # 20 pytest tests
 │   └── pyproject.toml
@@ -261,6 +264,7 @@ TPCP-Workspace/
 |:---------|:-------------|
 | [Step-by-Step Guide & API Reference](tpcp/docs/api_reference.md) | Full walkthrough: install → connect → share state → send media → global discovery |
 | [Architecture Deep-Dive](tpcp/docs/architecture.md) | Ed25519, CRDT math, multimodal design, A-DNS flow, DLQ mechanics |
+| [Universal Edge Architecture](tpcp/docs/universal_edge.md) | Hardware integration: ROS2 (Nvidia Jetson), MQTT (ESP32), HA (Matter), Webhook Gateway |
 | [Contributing](CONTRIBUTING.md) | Dev setup, code style, PR workflow |
 | [Security Policy](SECURITY.md) | Vulnerability reporting and crypto model |
 

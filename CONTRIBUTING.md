@@ -46,6 +46,10 @@ npm run build
   Run `ruff check tpcp/` and `black tpcp/` before committing.
 - **TypeScript:** Follow the existing tsconfig; strict mode is on.
 
-## A Note on Licensing
+## A Note on Licensing and CLA (Contributor License Agreement)
 
-By submitting a PR, you agree that your contributions are licensed under the same AGPLv3 license as the project. If your contribution is for enterprise/commercial integration use, please review [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md) first.
+TPCP operates under a dual-license model (AGPLv3 for open-source, and a Commercial License for enterprise). 
+
+To ensure we can maintain this dual-license ecosystem, by submitting a Pull Request, you agree to grant the TPCP project maintainers a perpetual, worldwide, non-exclusive, transferable, royalty-free, irrevocable license to use, modify, and distribute your contributions under both the AGPLv3 license and any commercial licenses offered by the project. You retain the copyright to your own work, but you grant us the right to include it in commercial offerings.
+
+If your contribution is for your own proprietary enterprise integration, please review [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md) first.

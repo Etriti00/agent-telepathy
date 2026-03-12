@@ -24,6 +24,7 @@ This guide walks you through everything you need to connect AI agents using TPCP
 ```bash
 cd tpcp
 pip install -e ".[dev]"
+pip install "tpcp-core[edge]"  # Install hardware bridging optional dependencies
 ```
 
 ### TypeScript
@@ -340,6 +341,17 @@ async with TPCPNode(identity, port=8000) as node:
         intent=Intent.STATE_SYNC
     )
 ```
+
+### Edge Hardware Adapters (v0.3.0+)
+
+The Universal Edge modules securely bridge the physical world to the swarm and require `pip install "tpcp-core[edge]"`.
+
+- **`ROS2Adapter`**: Bridges Nvidia Jetsons and robotics natively to Swarm memory mapping optical telemetry to `ImagePayload` loops.
+- **`HomeAssistantAdapter`**: Hooks directly into the HA REST/SSE events bus wrapping Apple HomeKit and Matter events into TPCP CRDT vectors.
+- **`MQTTAdapter`**: Acts natively as a lightweight IoT subscriber linking standard ESP32/Pico industrial sensors tightly to AI analysis states dynamically. 
+- **`Stateless Webhook Gateway`** (`tpcp/relay/webhook.py`): Secure FastAPI proxy verifying inbound POST requests from Siri / Zapier / iOS scripts and pipelining them directly into the WebSocket Mesh via a localized node.
+
+*See the [Universal Edge Architecture Guide](universal_edge.md) for setup and deployment workflows.*
 
 ---
 

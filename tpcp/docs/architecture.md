@@ -127,7 +127,7 @@ Every TPCP message is a signed envelope:
     "receiver_id": "agent-gemini-uuid",
     "intent": "Media_Share",
     "ttl": 30,
-    "protocol_version": "0.2.0"
+    "protocol_version": "0.3.0"
   },
   "payload": {
     "payload_type": "image",
