@@ -32,6 +32,7 @@ class BaseFrameworkAdapter(ABC):
     def __init__(self, agent_identity: AgentIdentity, identity_manager=None):
         self.identity = agent_identity
         self.identity_manager = identity_manager
+        self._logical_clock: int = 0
 
     @abstractmethod
     def pack_thought(self, target_id: UUID, raw_output: Any, intent: Intent) -> TPCPEnvelope:
