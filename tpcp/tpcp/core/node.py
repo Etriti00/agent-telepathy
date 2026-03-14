@@ -307,15 +307,16 @@ class TPCPNode:
             
             # ── DEDUPLICATION (REPLAY PROTECTION) ────────────────────────────
             current_time = time.monotonic()
+
+            # TTL-based cleanup: remove entries older than 5 minutes on every message
+            # (prevents unbounded cache growth and stale entries)
+            cutoff = current_time - 300
+            self._seen_messages = {k: v for k, v in self._seen_messages.items() if v > cutoff}
+
             if envelope.header.message_id in self._seen_messages:
                 logger.warning(f"Duplicate message {envelope.header.message_id} detected. Dropping.")
                 return
             self._seen_messages[envelope.header.message_id] = current_time
-            
-            # Clean up old seen messages periodically (e.g., older than 5 minutes)
-            if len(self._seen_messages) > 1000:
-                expired = current_time - 300  # 5 minutes
-                self._seen_messages = {k: v for k, v in self._seen_messages.items() if v > expired}
             # ────────────────────────────────────────────────────────────────
             
             # ── SECURITY MIDDLEWARE ──────────────────────────────────────────
