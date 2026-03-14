@@ -20,7 +20,7 @@ from typing import Any, Dict, Optional
 from uuid import UUID
 
 try:
-    import autogen  # noqa: F401
+    import autogen_agentchat  # noqa: F401
     AUTOGEN_AVAILABLE = True
 except ImportError:
     AUTOGEN_AVAILABLE = False
@@ -85,7 +85,7 @@ class AutoGenAdapter(BaseFrameworkAdapter):
         Returns:
             A TPCPEnvelope containing a TextPayload with the message content.
         """
-        self._logical_clock += 1
+        self._tick()
 
         if isinstance(raw_output, dict):
             content = raw_output.get("content", str(raw_output))

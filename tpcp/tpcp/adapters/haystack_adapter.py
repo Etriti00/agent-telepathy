@@ -87,7 +87,7 @@ class HaystackAdapter(BaseFrameworkAdapter):
         Returns:
             A TPCPEnvelope containing a TextPayload with the first answer or reply.
         """
-        self._logical_clock += 1
+        self._tick()
 
         if isinstance(raw_output, dict):
             # Try "answers" key (ExtractiveQA / GenerativeQA pipelines)

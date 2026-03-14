@@ -3,7 +3,7 @@ syntax = "proto3";
 // TPCP — Telepathy Communication Protocol
 // Version: 0.4.0
 // Wire format: JSON over WebSocket (this IDL is for SDK code generation)
-package tpcp.v4;
+package tpcp;
 
 option go_package = "github.com/tpcp-protocol/tpcp-go/tpcp";
 option java_package = "io.tpcp.schema";
@@ -22,7 +22,6 @@ enum Intent {
   ACK = 7;
   NACK = 8;
   BROADCAST = 9;
-  CHALLENGE_RESPONSE = 10;
 }
 
 // ── AGENT IDENTITY ────────────────────────────────────────────────────────────
@@ -42,7 +41,7 @@ message MessageHeader {
   string sender_id = 2;           // UUID string
   string receiver_id = 3;         // UUID string; "00000000-0000-0000-0000-000000000000" = broadcast
   string protocol_version = 4;    // e.g. "0.4.0"
-  int64 timestamp = 5;            // Unix epoch seconds
+  string timestamp = 5;           // ISO 8601 UTC string, e.g. "2026-03-15T10:00:00Z"
   string intent = 6;              // Intent enum value as string (matches JSON wire)
   int32 ttl = 7;                  // Time-to-live hop count (default 30)
 }

@@ -73,13 +73,18 @@ public class TPCPNode {
             public void onMessage(WebSocket ws, String text) {
                 try {
                     TPCPEnvelope env = MAPPER.readValue(text, TPCPEnvelope.class);
-                    // Verify inbound signature if we have a registered key for this sender.
-                    if (env.signature != null && !env.signature.isEmpty()
-                            && env.header != null && env.header.senderId != null) {
+                    // Verify inbound signature for all messages from registered peers.
+                    // Fail-closed: known peers must always provide a valid signature.
+                    if (env.header != null && env.header.senderId != null) {
                         String pubKey = peerKeys.get(env.header.senderId);
-                        if (pubKey != null && !IdentityManager.verify(pubKey, env.payload, env.signature)) {
-                            // Drop messages with invalid signatures from known peers.
-                            return;
+                        if (pubKey != null) {
+                            boolean sigValid = env.signature != null
+                                    && !env.signature.isEmpty()
+                                    && IdentityManager.verify(pubKey, env.payload, env.signature);
+                            if (!sigValid) {
+                                // Drop — invalid or missing signature from a known peer.
+                                return;
+                            }
                         }
                     }
                     dispatch(env);

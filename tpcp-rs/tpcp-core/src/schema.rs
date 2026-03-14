@@ -16,14 +16,10 @@ pub enum Intent {
     Handshake,
     #[serde(rename = "Task_Request")]
     TaskRequest,
-    #[serde(rename = "Task_Response")]
-    TaskResponse,
     #[serde(rename = "State_Sync")]
     StateSync,
     #[serde(rename = "State_Sync_Vector")]
     StateSyncVector,
-    #[serde(rename = "Memory_Sync")]
-    MemorySync,
     #[serde(rename = "Media_Share")]
     MediaShare,
     #[serde(rename = "Critique")]

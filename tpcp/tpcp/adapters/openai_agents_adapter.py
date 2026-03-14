@@ -90,7 +90,7 @@ class OpenAIAgentsAdapter(BaseFrameworkAdapter):
         Returns:
             A TPCPEnvelope containing a TextPayload with the message content.
         """
-        self._logical_clock += 1
+        self._tick()
 
         # Handle OpenAI ChatCompletion object
         if hasattr(raw_output, "choices"):

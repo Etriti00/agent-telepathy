@@ -110,7 +110,7 @@ class ModbusAdapter(BaseFrameworkAdapter):
                 - "unit_id" (int, optional): Modbus unit ID
                 - "timestamp_ms" (int): Unix epoch milliseconds
         """
-        self._logical_clock += 1
+        self._tick()
         reg_type = raw_output.get("register_type", "holding")
         address = raw_output.get("address", 0)
         uid = raw_output.get("unit_id", self.unit_id)
@@ -277,7 +277,7 @@ class ModbusAdapter(BaseFrameworkAdapter):
             def _cb(env, _tid):  # type: ignore[misc]
                 callback(env)  # type: ignore[misc]
 
-        if self._client is None:
+        if self._client is None or not self._client.connected:
             self._client = AsyncModbusTcpClient(self.host, port=self.port)
             await self._client.connect()
             logger.info(f"[ModbusAdapter] Connected to {self.host}:{self.port} unit={self.unit_id}")
@@ -291,12 +291,26 @@ class ModbusAdapter(BaseFrameworkAdapter):
                     try:
                         read_ok = False
                         value = 0
-                        if register_type in ("coil", "discrete"):
+                        if register_type == "coil":
                             result = await self._client.read_coils(address, 1, slave=self.unit_id)
                             if result and not result.isError():
                                 value = result.bits[0]
                                 read_ok = True
-                        else:
+                        elif register_type == "discrete":
+                            result = await self._client.read_discrete_inputs(
+                                address, 1, slave=self.unit_id
+                            )
+                            if result and not result.isError():
+                                value = result.bits[0]
+                                read_ok = True
+                        elif register_type == "input":
+                            result = await self._client.read_input_registers(
+                                address, 1, slave=self.unit_id
+                            )
+                            if result and not result.isError():
+                                value = result.registers[0]
+                                read_ok = True
+                        else:  # "holding" (default)
                             result = await self._client.read_holding_registers(
                                 address, 1, slave=self.unit_id
                             )

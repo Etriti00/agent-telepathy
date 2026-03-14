@@ -89,7 +89,7 @@ class MQTTAdapter(BaseFrameworkAdapter):
             }
         }
         
-        self._logical_clock += 1
+        self._tick()
         
         payload = CRDTSyncPayload(
             crdt_type="LWW-Map",

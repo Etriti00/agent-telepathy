@@ -85,7 +85,7 @@ class PydanticAIAdapter(BaseFrameworkAdapter):
         Returns:
             A TPCPEnvelope containing a TextPayload with the result content.
         """
-        self._logical_clock += 1
+        self._tick()
 
         # Handle PydanticAI RunResult (has .output or .data attribute)
         if hasattr(raw_output, "output"):

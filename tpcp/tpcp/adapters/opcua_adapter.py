@@ -39,11 +39,6 @@ from tpcp.schemas.envelope import (
     TPCPEnvelope,
 )
 
-# Threshold above which a bytes/bytearray OPC-UA value is returned as BinaryPayload.
-# Callers that need chunked transfer should pass the result through
-# tpcp.core.chunker.send_chunked().
-_BINARY_THRESHOLD_BYTES = 65536
-
 try:
     from asyncua import Client as OPCUAClient
     from asyncua import ua  # noqa: F401
@@ -113,7 +108,7 @@ class OPCUAAdapter(BaseFrameworkAdapter):
                 - "quality" (str, optional): "Good", "Bad", or "Uncertain"
                 - "unit" (str, optional): Engineering unit for numeric values
         """
-        self._logical_clock += 1
+        self._tick()
         node_id = str(raw_output.get("node_id", "unknown"))
         value = raw_output.get("value", 0.0)
 
@@ -133,8 +128,15 @@ class OPCUAAdapter(BaseFrameworkAdapter):
 
         # --- Numeric / scalar branch ---
         sensor_id = "opcua_" + node_id.replace(":", "_").replace(";", "_").replace("=", "_")
+        try:
+            numeric_value = float(value)
+        except (TypeError, ValueError):
+            numeric_value = 0.0
+            logger.warning(
+                f"[OPCUAAdapter] Non-numeric value {value!r} for node {node_id}; using 0.0"
+            )
         reading = TelemetryReading(
-            value=float(value),
+            value=numeric_value,
             timestamp_ms=int(raw_output.get("timestamp_ms", 0)),
             quality=raw_output.get("quality"),
         )
@@ -210,8 +212,10 @@ class OPCUAAdapter(BaseFrameworkAdapter):
 
         # No existing connection — open a transient one and always close it.
         client = OPCUAClient(self.server_url)
+        connected = False
         try:
             await client.connect()
+            connected = True
             logger.info(f"[OPCUAAdapter] Transient connection to {self.server_url} for write")
             node = client.get_node(write_cmd["node_id"])
             await node.write_value(write_cmd["value"])
@@ -223,10 +227,11 @@ class OPCUAAdapter(BaseFrameworkAdapter):
             logger.error(f"[OPCUAAdapter] execute_write failed: {exc}")
             return False
         finally:
-            try:
-                await client.disconnect()
-            except Exception:
-                pass
+            if connected:
+                try:
+                    await client.disconnect()
+                except Exception:
+                    pass
 
     async def start_subscription(
         self,
@@ -255,7 +260,11 @@ class OPCUAAdapter(BaseFrameworkAdapter):
             self._client = None
 
         self._client = OPCUAClient(self.server_url)
-        await self._client.connect()
+        try:
+            await self._client.connect()
+        except Exception:
+            self._client = None
+            raise
         logger.info(f"[OPCUAAdapter] Connected to {self.server_url}")
 
         handler = _OPCUASubscriptionHandler(
@@ -299,7 +308,7 @@ class _OPCUASubscriptionHandler:
                         raw_output["quality"] = "Bad"
                     else:
                         raw_output["quality"] = "Uncertain"
-            envelope = self.adapter.pack_thought(self.target_id, raw_output, Intent.MEDIA_SHARE)
+            envelope = self.adapter.pack_thought(self.target_id, raw_output, Intent.STATE_SYNC)
             self.callback(envelope, self.target_id)
         except Exception as exc:
             logger.error(f"[OPCUAAdapter] Error in datachange_notification: {exc}")

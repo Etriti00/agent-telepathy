@@ -83,7 +83,7 @@ class SmolagentsAdapter(BaseFrameworkAdapter):
         Returns:
             A TPCPEnvelope containing a TextPayload with the final answer or string result.
         """
-        self._logical_clock += 1
+        self._tick()
 
         if isinstance(raw_output, dict):
             content = str(raw_output.get("final_answer", raw_output))

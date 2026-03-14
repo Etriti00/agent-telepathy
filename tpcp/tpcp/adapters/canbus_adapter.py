@@ -66,7 +66,7 @@ class CANbusAdapter(BaseFrameworkAdapter):
         )
         await adapter.start_listening(
             can_ids=[0x123, 0x456],  # None = listen to all IDs
-            on_message_callback=my_callback,
+            callback=my_callback,
         )
     """
 
@@ -110,7 +110,7 @@ class CANbusAdapter(BaseFrameworkAdapter):
                 - "timestamp" (float): CAN frame timestamp
                 - "is_extended_id" (bool, optional)
         """
-        self._logical_clock += 1
+        self._tick()
         arb_id = raw_output.get("arbitration_id", 0)
         sensor_id = f"can_{hex(arb_id)}"
         timestamp_ms = int(raw_output.get("timestamp", 0) * 1000)
@@ -145,7 +145,7 @@ class CANbusAdapter(BaseFrameworkAdapter):
         if hasattr(envelope.payload, "content"):
             try:
                 return json.loads(envelope.payload.content)
-            except (json.JSONDecodeError, AttributeError):
+            except (json.JSONDecodeError, AttributeError, TypeError):
                 return {"raw": envelope.payload.content}
         return {}
 
@@ -194,6 +194,10 @@ class CANbusAdapter(BaseFrameworkAdapter):
         from tpcp.core.node import BROADCAST_UUID
         effective_target = target_id or BROADCAST_UUID
         loop = asyncio.get_running_loop()
+
+        if self._bus is not None or self._running:
+            logger.warning("[CANbusAdapter] Already listening — call stop_listening() first")
+            return
 
         self._bus = can.Bus(
             interface=self.interface, channel=self.channel, bitrate=self.bitrate
@@ -249,7 +253,7 @@ class CANbusAdapter(BaseFrameworkAdapter):
                 "timestamp": msg.timestamp,
                 "is_extended_id": msg.is_extended_id,
             }
-            envelope = self.pack_thought(target_id, raw_output, Intent.MEDIA_SHARE)
+            envelope = self.pack_thought(target_id, raw_output, Intent.STATE_SYNC)
             callback(envelope, target_id)
         except Exception as exc:
             logger.error(f"[CANbusAdapter] Dispatch error: {exc}")

@@ -84,7 +84,7 @@ class LlamaIndexAdapter(BaseFrameworkAdapter):
         Returns:
             A TPCPEnvelope containing a TextPayload with the response text.
         """
-        self._logical_clock += 1
+        self._tick()
 
         # Handle LlamaIndex Response object
         if hasattr(raw_output, "response"):

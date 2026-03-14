@@ -38,7 +38,7 @@ import base64
 import logging
 import time
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 from uuid import UUID
 
 from tpcp.schemas.envelope import TPCPEnvelope
@@ -62,6 +62,8 @@ class ChunkReassembler:
         self.timeout_seconds = timeout_seconds
         # transfer_id -> list of (chunk_index, data_bytes)
         self._chunks: Dict[UUID, List[Tuple[int, bytes]]] = defaultdict(list)
+        # transfer_id -> set of received chunk indices (dedup guard)
+        self._received_indices: Dict[UUID, Set[int]] = defaultdict(set)
         # transfer_id -> expected total_chunks
         self._total_chunks: Dict[UUID, int] = {}
         # transfer_id -> first-seen timestamp
@@ -98,13 +100,22 @@ class ChunkReassembler:
 
         chunk_bytes = base64.b64decode(envelope.payload.data_base64)
 
+        # Reject duplicate chunks — same index already received for this transfer.
+        if chunk_index in self._received_indices[transfer_id]:
+            logger.debug(
+                f"[Reassembler] Duplicate chunk {chunk_index} for {transfer_id} — ignored"
+            )
+            return None
+
         if transfer_id not in self._timestamps:
             self._timestamps[transfer_id] = time.monotonic()
             self._total_chunks[transfer_id] = total_chunks
 
+        self._received_indices[transfer_id].add(chunk_index)
         self._chunks[transfer_id].append((chunk_index, chunk_bytes))
 
-        if len(self._chunks[transfer_id]) == total_chunks:
+        # Complete only when every index 0..total_chunks-1 is present.
+        if self._received_indices[transfer_id] == set(range(total_chunks)):
             return self._reassemble(transfer_id)
 
         return None
@@ -112,6 +123,7 @@ class ChunkReassembler:
     def _reassemble(self, transfer_id: UUID) -> bytes:
         """Sort chunks by index and concatenate."""
         chunks = sorted(self._chunks.pop(transfer_id), key=lambda x: x[0])
+        self._received_indices.pop(transfer_id, None)
         self._total_chunks.pop(transfer_id, None)
         self._timestamps.pop(transfer_id, None)
         return b"".join(data for _, data in chunks)
@@ -127,5 +139,6 @@ class ChunkReassembler:
         for tid in stale:
             logger.warning(f"[Reassembler] Purging stale transfer {tid} (timeout)")
             self._chunks.pop(tid, None)
+            self._received_indices.pop(tid, None)
             self._total_chunks.pop(tid, None)
             self._timestamps.pop(tid, None)

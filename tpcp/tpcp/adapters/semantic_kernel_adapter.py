@@ -84,7 +84,7 @@ class SemanticKernelAdapter(BaseFrameworkAdapter):
         Returns:
             A TPCPEnvelope containing a TextPayload with the function result.
         """
-        self._logical_clock += 1
+        self._tick()
 
         # Handle SK FunctionResult object
         if hasattr(raw_output, "value"):

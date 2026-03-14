@@ -27,6 +27,7 @@ def send(target_url, intent, message, identity):
                 private_key_bytes=__import__("base64").b64decode(data["private_key_b64"])
             )
             agent_identity = AgentIdentity(
+                agent_id=data["agent_id"],
                 framework=data.get("framework", "cli-agent"),
                 public_key=data["public_key"],
             )

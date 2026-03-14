@@ -483,7 +483,8 @@ class TPCPNode:
         payload = TextPayload(content="OK")
         ack_info = AckInfo(acked_message_id=original_envelope.header.message_id)
         envelope = TPCPEnvelope(header=header, payload=payload, ack_info=ack_info)
-        envelope.signature = self.identity_manager.sign_payload(payload.model_dump())
+        signable = {**payload.model_dump(), "ack_info": ack_info.model_dump()}
+        envelope.signature = self.identity_manager.sign_payload(signable)
         return envelope
 
     def _create_nack_envelope(self, original_envelope: TPCPEnvelope, reason: str) -> TPCPEnvelope:
@@ -496,7 +497,8 @@ class TPCPNode:
         payload = TextPayload(content=reason)
         ack_info = AckInfo(acked_message_id=original_envelope.header.message_id)
         envelope = TPCPEnvelope(header=header, payload=payload, ack_info=ack_info)
-        envelope.signature = self.identity_manager.sign_payload(payload.model_dump())
+        signable = {**payload.model_dump(), "ack_info": ack_info.model_dump()}
+        envelope.signature = self.identity_manager.sign_payload(signable)
         return envelope
 
     async def send_message(
@@ -516,6 +518,8 @@ class TPCPNode:
         )
 
         payload_dict = payload.model_dump()
+        if chunk_info is not None:
+            payload_dict = {**payload_dict, "chunk_info": chunk_info.model_dump()}
         signature_str = self.identity_manager.sign_payload(payload_dict)
 
         envelope = TPCPEnvelope(header=header, payload=payload, signature=signature_str, chunk_info=chunk_info)

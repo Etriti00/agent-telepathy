@@ -82,7 +82,7 @@ class ROS2Adapter(BaseFrameworkAdapter):
 
         if isinstance(raw_output, dict) and "state" in raw_output:
             # It's a CRDT state sync
-            self._logical_clock += 1
+            self._tick()
             payload = CRDTSyncPayload(
                 crdt_type="LWW-Map",
                 state=raw_output["state"],
