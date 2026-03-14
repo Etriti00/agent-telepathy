@@ -21,3 +21,22 @@ from .crewai_adapter import CrewAIAdapter
 from .langgraph_adapter import LangGraphAdapter
 
 __all__ = ["BaseFrameworkAdapter", "CrewAIAdapter", "LangGraphAdapter"]
+
+# Industrial IoT adapters — guarded by library availability
+try:
+    from .opcua_adapter import OPCUAAdapter
+    __all__.append("OPCUAAdapter")
+except ImportError:
+    pass
+
+try:
+    from .modbus_adapter import ModbusAdapter
+    __all__.append("ModbusAdapter")
+except ImportError:
+    pass
+
+try:
+    from .canbus_adapter import CANbusAdapter
+    __all__.append("CANbusAdapter")
+except ImportError:
+    pass
