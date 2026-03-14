@@ -263,7 +263,13 @@ class TPCPNode:
     async def stop_listening(self) -> None:
         """Stop the WebSocket server gracefully and close all connections."""
         self._running = False
-        
+
+        # Cancel all pending ACK futures
+        for fut in list(self._pending_acks.values()):
+            if not fut.done():
+                fut.cancel()
+        self._pending_acks.clear()
+
         # Close all cached peer connections
         for uid, ws in list(self._peer_connections.items()):
             try:
@@ -349,10 +355,16 @@ class TPCPNode:
             # Dispatch to handler
             handler = self.handlers.get(envelope.header.intent)
             if handler:
-                await handler(envelope, websocket)
-                if self.auto_ack and envelope.header.intent not in (Intent.ACK, Intent.NACK):
-                    ack_envelope = self._create_ack_envelope(envelope)
-                    await self._dispatch_envelope(envelope.header.sender_id, ack_envelope)
+                try:
+                    await handler(envelope, websocket)
+                    if self.auto_ack and envelope.header.intent not in (Intent.ACK, Intent.NACK):
+                        ack_envelope = self._create_ack_envelope(envelope)
+                        await self._dispatch_envelope(envelope.header.sender_id, ack_envelope)
+                except Exception as exc:
+                    logger.error(f"Handler for {envelope.header.intent} raised: {exc}")
+                    if self.auto_ack and envelope.header.intent not in (Intent.ACK, Intent.NACK):
+                        nack_envelope = self._create_nack_envelope(envelope, str(exc))
+                        await self._dispatch_envelope(envelope.header.sender_id, nack_envelope)
             else:
                 logger.warning(f"No handler registered for intent: {envelope.header.intent}")
                 
@@ -426,7 +438,7 @@ class TPCPNode:
                 fut.set_result(envelope)
 
     async def _handle_nack(self, envelope: TPCPEnvelope, websocket) -> None:
-        """Reject the pending Future when a NACK is received; re-queue to DLQ."""
+        """Reject the pending Future when a NACK is received. The caller of send_message receives a RuntimeError and can decide whether to retry or re-queue."""
         if envelope.ack_info and envelope.ack_info.acked_message_id in self._pending_acks:
             msg_id = envelope.ack_info.acked_message_id
             fut = self._pending_acks.pop(msg_id)
@@ -451,8 +463,20 @@ class TPCPNode:
         payload = TextPayload(content="OK")
         ack_info = AckInfo(acked_message_id=original_envelope.header.message_id)
         envelope = TPCPEnvelope(header=header, payload=payload, ack_info=ack_info)
-        if self.identity_manager:
-            envelope.signature = self.identity_manager.sign_payload(payload.model_dump())
+        envelope.signature = self.identity_manager.sign_payload(payload.model_dump())
+        return envelope
+
+    def _create_nack_envelope(self, original_envelope: TPCPEnvelope, reason: str) -> TPCPEnvelope:
+        """Create a NACK envelope referencing the original message."""
+        from tpcp.schemas.envelope import AckInfo, TextPayload
+        header = self._create_header(
+            receiver_id=original_envelope.header.sender_id,
+            intent=Intent.NACK,
+        )
+        payload = TextPayload(content=reason)
+        ack_info = AckInfo(acked_message_id=original_envelope.header.message_id)
+        envelope = TPCPEnvelope(header=header, payload=payload, ack_info=ack_info)
+        envelope.signature = self.identity_manager.sign_payload(payload.model_dump())
         return envelope
 
     async def send_message(self, target_id: UUID, intent: Intent, payload: Payload, require_ack: bool = False) -> None:
@@ -480,7 +504,7 @@ class TPCPNode:
                 await asyncio.wait_for(fut, timeout=30.0)
             except asyncio.TimeoutError:
                 self._pending_acks.pop(envelope.header.message_id, None)
-                raise TimeoutError(f"No ACK received for {envelope.header.message_id} within 30s")
+                raise asyncio.TimeoutError(f"No ACK received for {envelope.header.message_id} within 30s")
 
     async def _get_peer_connection(self, target_id: UUID) -> Optional[websockets.client.WebSocketClientProtocol]:
         """Get or create a pooled WebSocket connection to a peer."""
