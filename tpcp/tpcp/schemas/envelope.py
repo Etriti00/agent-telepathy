@@ -236,7 +236,9 @@ class TelemetryPayload(BaseModel):
     sensor_id: str = Field(..., description="Unique sensor identifier, e.g. 'opcua_ns2_i_2' or 'can_0x123'.")
     unit: str = Field(..., description="Engineering unit, e.g. 'rpm', 'celsius', 'bar'.")
     readings: List[TelemetryReading] = Field(..., description="Batch of timestamped readings from this sensor.")
-    source_protocol: str = Field(..., description="Origin protocol: 'opcua', 'modbus', 'canbus', or 'mqtt'.")
+    source_protocol: Literal["opcua", "modbus", "canbus", "mqtt"] = Field(
+        ..., description="Origin protocol: 'opcua', 'modbus', 'canbus', or 'mqtt'."
+    )
 
 
 # ── ACK / CHUNK METADATA MODELS ───────────────────────────────────────

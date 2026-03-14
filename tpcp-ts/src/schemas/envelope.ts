@@ -151,7 +151,7 @@ export const TelemetryReadingSchema = z.object({
 export type TelemetryReading = z.infer<typeof TelemetryReadingSchema>;
 
 export const TelemetryPayloadSchema = z.object({
-  payload_type: z.literal("telemetry"),
+  payload_type: z.literal("telemetry").default("telemetry"),
   sensor_id: z.string(),
   unit: z.string(),
   readings: z.array(TelemetryReadingSchema),
