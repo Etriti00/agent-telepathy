@@ -52,6 +52,18 @@ edge = [
     "uvicorn>=0.29.0",
     "aiohttp>=3.9.3"
 ]
+industrial = [
+    "asyncua>=1.1.0",
+    "pymodbus>=3.6.0",
+    "python-can>=4.3.0",
+]
+ai-frameworks = [
+    "autogen-agentchat>=0.4.0",
+    "pydantic-ai>=0.0.14",
+    "smolagents>=1.0.0",
+    "openai>=1.0.0",
+    "llama-index>=0.10.0",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["tpcp"]
