@@ -1,15 +1,24 @@
 {
   "name": "tpcp-ts",
   "version": "0.3.0",
-  "description": "",
+  "description": "Telepathy Communication Protocol - TypeScript/Node.js SDK for multi-agent AI communication",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "jest",
     "build": "tsc"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": ["ai", "agents", "multi-agent", "protocol", "websocket", "crdt", "ed25519", "llm"],
+  "author": "TPCP Contributors",
+  "license": "AGPL-3.0-or-later",
+  "homepage": "https://github.com/tpcp-protocol/tpcp",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tpcp-protocol/tpcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tpcp-protocol/tpcp/issues"
+  },
   "type": "commonjs",
   "dependencies": {
     "fast-json-stable-stringify": "^2.1.0",
@@ -18,9 +27,11 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "@types/node": "^25.4.0",
     "@types/ws": "^8.18.1",
+    "jest": "^30.3.0",
+    "ts-jest": "^29.4.6",
     "typescript": "^5.9.3"
-  },
-  "types": "dist/index.d.ts"
+  }
 }
