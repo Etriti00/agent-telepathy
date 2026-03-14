@@ -30,6 +30,8 @@ import time
 import logging
 from typing import Dict, Optional
 
+BROADCAST_ID = "00000000-0000-0000-0000-000000000000"
+
 import websockets
 from websockets.server import WebSocketServerProtocol
 
@@ -145,7 +147,18 @@ class ADNSRelayServer:
                     data["header"] = header
                     forwarded_message = json.dumps(data)
                     
-                    if target_id and target_id in self.registry and target_id != sender_id:
+                    if target_id == BROADCAST_ID:
+                        # Fan-out to all registered peers except the sender
+                        fanout_count = 0
+                        for agent_id, info in list(self.registry.items()):
+                            if agent_id != sender_id:
+                                try:
+                                    await info["ws"].send(forwarded_message)
+                                    fanout_count += 1
+                                except Exception as exc:
+                                    logger.warning(f"[Relay] Broadcast to {agent_id} failed: {exc}")
+                        logger.info(f"[Relay] Broadcast from {sender_id}: fanned out to {fanout_count} peers")
+                    elif target_id and target_id in self.registry and target_id != sender_id:
                         logger.info(f"Routing {intent} from {sender_id} to {target_id} (TTL={ttl-1})")
                         target_ws = self.registry[target_id]["ws"]
                         try:

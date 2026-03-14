@@ -16,9 +16,9 @@
 # 
 # For commercial licensing inquiries, see COMMERCIAL_LICENSE.md
 
-from .node import TPCPNode
+from .node import TPCPNode, BROADCAST_UUID
 from .relay_client import RelayTPCPNode
 from tpcp.core.chunker import send_chunked
 from tpcp.core.reassembler import ChunkReassembler
 
-__all__ = ["TPCPNode", "RelayTPCPNode", "send_chunked", "ChunkReassembler"]
+__all__ = ["TPCPNode", "BROADCAST_UUID", "RelayTPCPNode", "send_chunked", "ChunkReassembler"]

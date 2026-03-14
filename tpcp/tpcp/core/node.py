@@ -57,6 +57,9 @@ from tpcp.core.queue import MessageQueue
 
 logger = logging.getLogger(__name__)
 
+# Nil UUID used as the broadcast address per the TPCP broadcast convention
+BROADCAST_UUID = UUID("00000000-0000-0000-0000-000000000000")
+
 # Type alias for intent handlers
 IntentHandler = Callable[[TPCPEnvelope, WebSocketServerProtocol], Awaitable[None]]
 
@@ -529,6 +532,47 @@ class TPCPNode:
             except asyncio.TimeoutError:
                 self._pending_acks.pop(envelope.header.message_id, None)
                 raise asyncio.TimeoutError(f"No ACK received for {envelope.header.message_id} within 30s")
+
+    async def send_broadcast(self, intent: Intent, payload: Payload) -> int:
+        """
+        Send an envelope to all registered peers.
+
+        Uses the nil UUID (00000000-...) as receiver_id, per the TPCP broadcast convention.
+        The relay also fans out messages with this receiver_id to all registered agents.
+
+        Returns:
+            Number of peers the message was dispatched to.
+        """
+        dispatched = 0
+        for peer_id in list(self.peer_registry.keys()):
+            try:
+                await self.send_message(target_id=peer_id, intent=intent, payload=payload)
+                dispatched += 1
+            except Exception as exc:
+                logger.warning(f"[Broadcast] Failed to dispatch to {peer_id}: {exc}")
+        return dispatched
+
+    async def send_multicast(self, tag: str, intent: Intent, payload: Payload) -> int:
+        """
+        Send an envelope to all peers whose capabilities list contains the given tag.
+
+        Args:
+            tag: Capability tag to filter peers by (e.g. "vision", "robotics", "plc").
+            intent: The intent of the message.
+            payload: The payload to send.
+
+        Returns:
+            Number of peers the message was dispatched to.
+        """
+        dispatched = 0
+        for peer_id, peer_identity in list(self.peer_registry.items()):
+            if tag in (peer_identity[0].capabilities or []):
+                try:
+                    await self.send_message(target_id=peer_id, intent=intent, payload=payload)
+                    dispatched += 1
+                except Exception as exc:
+                    logger.warning(f"[Multicast:{tag}] Failed to dispatch to {peer_id}: {exc}")
+        return dispatched
 
     async def _get_peer_connection(self, target_id: UUID) -> Optional[websockets.client.WebSocketClientProtocol]:
         """Get or create a pooled WebSocket connection to a peer."""
