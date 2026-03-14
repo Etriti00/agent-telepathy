@@ -3,6 +3,9 @@ Tests for ModbusAdapter using a pymodbus TCP server with in-memory datastore.
 
 Uses StartAsyncTcpServer + ModbusDeviceContext so no external PLC hardware
 or aiohttp (ModbusSimulatorServer dependency) is required.
+
+The modbus_server fixture is module-scoped so the TCP server binds once and
+serves all tests — avoids OS port-reuse race conditions between test teardowns.
 """
 import asyncio
 import pytest
@@ -18,12 +21,15 @@ from pymodbus.datastore import (  # type: ignore
 from tpcp.adapters.modbus_adapter import ModbusAdapter
 from tpcp.schemas.envelope import TelemetryPayload
 
+_MODBUS_HOST = "127.0.0.1"
+_MODBUS_PORT = 50200
+
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 async def modbus_server():
-    """Start an in-process pymodbus TCP server and yield (host, port)."""
+    """Start a single in-process pymodbus TCP server for the entire module."""
     store = ModbusDeviceContext(
         di=ModbusSequentialDataBlock(0, [0] * 100),
         co=ModbusSequentialDataBlock(0, [0] * 100),
@@ -31,11 +37,11 @@ async def modbus_server():
         ir=ModbusSequentialDataBlock(0, [0] * 100),
     )
     context = ModbusServerContext(devices=store, single=True)
-    task = asyncio.create_task(
-        StartAsyncTcpServer(context=context, address=("127.0.0.1", 50200))
+    task = asyncio.get_event_loop().create_task(
+        StartAsyncTcpServer(context=context, address=(_MODBUS_HOST, _MODBUS_PORT))
     )
-    await asyncio.sleep(0.3)  # give server time to bind
-    yield ("127.0.0.1", 50200)
+    await asyncio.sleep(0.5)  # give server time to bind
+    yield (_MODBUS_HOST, _MODBUS_PORT)
     task.cancel()
     try:
         await task
@@ -77,7 +83,7 @@ async def test_poll_holding_registers_produces_telemetry(modbus_server):
 @pytest.mark.asyncio
 async def test_retry_queue_bounded():
     """Writes queued when disconnected are capped at max_retry_queue entries."""
-    adapter = ModbusAdapter(host="127.0.0.1", port=50299, unit_id=1)
+    adapter = ModbusAdapter(host=_MODBUS_HOST, port=50299, unit_id=1)
     # Don't connect — all writes should be queued.
     for i in range(adapter._max_retry_queue + 20):
         await adapter.execute_write({"address": 0, "value": i, "type": "holding"})
