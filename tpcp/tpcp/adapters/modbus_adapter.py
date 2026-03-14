@@ -27,6 +27,7 @@ Requires: pip install tpcp-core[industrial]
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 from typing import Any, Callable, Dict, Optional
@@ -164,9 +165,9 @@ class ModbusAdapter(BaseFrameworkAdapter):
         address = int(write_cmd["address"])
         value = write_cmd["value"]
         if cmd_type == "coil":
-            await self._client.write_coil(address, bool(value), device_id=self.unit_id)
+            await self._client.write_coil(address, bool(value), slave=self.unit_id)
         else:
-            await self._client.write_register(address, int(value), device_id=self.unit_id)
+            await self._client.write_register(address, int(value), slave=self.unit_id)
 
     async def execute_write(self, write_cmd: Dict[str, Any]) -> bool:
         """
@@ -291,13 +292,13 @@ class ModbusAdapter(BaseFrameworkAdapter):
                         read_ok = False
                         value = 0
                         if register_type in ("coil", "discrete"):
-                            result = await self._client.read_coils(address, 1, device_id=self.unit_id)
+                            result = await self._client.read_coils(address, 1, slave=self.unit_id)
                             if result and not result.isError():
                                 value = result.bits[0]
                                 read_ok = True
                         else:
                             result = await self._client.read_holding_registers(
-                                address, 1, device_id=self.unit_id
+                                address, 1, slave=self.unit_id
                             )
                             if result and not result.isError():
                                 value = result.registers[0]
@@ -321,7 +322,9 @@ class ModbusAdapter(BaseFrameworkAdapter):
                             effective_target, raw_output, Intent.MEDIA_SHARE
                         )
                         if _cb is not None:
-                            _cb(envelope, effective_target)
+                            result = _cb(envelope, effective_target)
+                            if inspect.iscoroutine(result):
+                                await result
 
                     except Exception as exc:
                         logger.warning(
