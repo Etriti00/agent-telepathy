@@ -18,7 +18,8 @@
   "scripts": {
     "test": "jest",
     "build": "tsc",
-    "build:browser": "tsc --module ESNext --outDir dist/esm"
+    "build:browser": "tsc --module ESNext --outDir dist/esm",
+    "prepublishOnly": "npm run build && npm test"
   },
   "keywords": ["ai", "agents", "multi-agent", "protocol", "websocket", "crdt", "ed25519", "llm"],
   "author": "TPCP Contributors",

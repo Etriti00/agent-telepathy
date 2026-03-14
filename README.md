@@ -12,7 +12,7 @@
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white" alt="Python 3.11+"></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-Ready-3178c6?logo=typescript&logoColor=white" alt="TypeScript"></a>
   <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
-  <img src="https://img.shields.io/badge/version-0.3.0-orange" alt="Version 0.3.0">
+  <img src="https://img.shields.io/badge/version-0.4.0-orange" alt="Version 0.4.0">
   <a href="https://github.com/tpcp-protocol/tpcp/actions/workflows/ci.yml"><img src="https://github.com/tpcp-protocol/tpcp/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://pypi.org/project/tpcp-core/"><img src="https://img.shields.io/pypi/v/tpcp-core?color=blue&logo=python&logoColor=white" alt="PyPI"></a>
   <a href="https://www.npmjs.com/package/tpcp-ts"><img src="https://img.shields.io/npm/v/tpcp-ts?color=red&logo=npm" alt="npm"></a>

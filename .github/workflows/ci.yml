@@ -62,10 +62,11 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: '1.22'
-    - name: Download modules
+    - name: Tidy and download modules
+      # go mod tidy generates go.sum if absent (idempotent on subsequent runs).
       run: |
         cd tpcp-go
-        go mod download
+        go mod tidy
     - name: Build
       run: |
         cd tpcp-go
@@ -109,10 +110,12 @@ jobs:
       with:
         distribution: temurin
         java-version: '21'
-    - name: Build and test
+        # Cache Maven local repository for faster CI runs.
+        cache: maven
+    - name: Build and test (Maven)
       run: |
         cd tpcp-java
-        ./gradlew build test
+        mvn --batch-mode clean package
 
   typescript-tests:
     runs-on: ubuntu-latest
