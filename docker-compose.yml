@@ -1,0 +1,26 @@
+# TPCP Development Environment
+# Usage: docker-compose up
+#
+# Starts:
+#   - adns-relay: Global A-DNS discovery relay (port 9000)
+#
+# Your Python/TypeScript agents connect to ws://localhost:9000
+
+version: "3.9"
+
+services:
+  adns-relay:
+    build:
+      context: ./tpcp
+      dockerfile: Dockerfile
+    container_name: tpcp-adns-relay
+    ports:
+      - "9000:9000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import websockets; print('ok')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    environment:
+      - PYTHONUNBUFFERED=1
