@@ -18,5 +18,7 @@
 
 from .node import TPCPNode
 from .relay_client import RelayTPCPNode
+from tpcp.core.chunker import send_chunked
+from tpcp.core.reassembler import ChunkReassembler
 
-__all__ = ["TPCPNode", "RelayTPCPNode"]
+__all__ = ["TPCPNode", "RelayTPCPNode", "send_chunked", "ChunkReassembler"]

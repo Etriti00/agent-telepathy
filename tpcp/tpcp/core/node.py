@@ -39,6 +39,7 @@ from pydantic import ValidationError
 from tpcp.schemas.envelope import (
     AgentIdentity,
     AckInfo,
+    ChunkInfo,
     TPCPEnvelope,
     MessageHeader,
     Intent,
@@ -495,7 +496,14 @@ class TPCPNode:
         envelope.signature = self.identity_manager.sign_payload(payload.model_dump())
         return envelope
 
-    async def send_message(self, target_id: UUID, intent: Intent, payload: Payload, require_ack: bool = False) -> None:
+    async def send_message(
+        self,
+        target_id: UUID,
+        intent: Intent,
+        payload: Payload,
+        require_ack: bool = False,
+        chunk_info: Optional[ChunkInfo] = None,
+    ) -> None:
         """Sign and dispatch a TPCP message to a specific peer in the registry."""
         header = MessageHeader(
             sender_id=self.identity.agent_id,
@@ -507,7 +515,7 @@ class TPCPNode:
         payload_dict = payload.model_dump()
         signature_str = self.identity_manager.sign_payload(payload_dict)
 
-        envelope = TPCPEnvelope(header=header, payload=payload, signature=signature_str)
+        envelope = TPCPEnvelope(header=header, payload=payload, signature=signature_str, chunk_info=chunk_info)
 
         if require_ack:
             fut = asyncio.get_running_loop().create_future()
