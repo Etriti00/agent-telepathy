@@ -8,7 +8,7 @@ import pytest
 
 pytest.importorskip("asyncua", reason="asyncua not installed; skip OPC-UA tests")
 
-from asyncua import Server as OPCUAServer  # type: ignore
+from asyncua import Server as OPCUAServer, ua  # type: ignore
 from tpcp.adapters.opcua_adapter import OPCUAAdapter
 from tpcp.schemas.envelope import TelemetryPayload, BinaryPayload
 
@@ -20,6 +20,11 @@ async def _build_server(url: str):
     server = OPCUAServer()
     await server.init()
     server.set_endpoint(url)
+    # Disable signed/encrypted security so anonymous clients can write without
+    # a certificate. Without this the server advertises secure endpoints it
+    # cannot serve and rejects writes from anonymous clients with
+    # BadUserAccessDenied.
+    server.set_security_policy([ua.SecurityPolicyType.NoSecurity])
     uri = "urn:tpcp:test"
     idx = await server.register_namespace(uri)
     objects = server.nodes.objects
