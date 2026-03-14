@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tpcp-relay
+  namespace: tpcp-system
+  labels:
+    app.kubernetes.io/name: tpcp-relay
+    app.kubernetes.io/component: relay
+    app.kubernetes.io/version: "0.4.0"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tpcp-relay
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: tpcp-relay
+        app.kubernetes.io/component: relay
+    spec:
+      serviceAccountName: tpcp-relay
+      containers:
+        - name: tpcp-relay
+          image: ghcr.io/tpcp-protocol/tpcp-relay:0.4.0
+          ports:
+            - name: ws
+              containerPort: 8765
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: tpcp-relay-config
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8765
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8765
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: tpcp-relay
+                topologyKey: kubernetes.io/hostname
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: tpcp-relay
