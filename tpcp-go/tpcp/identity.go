@@ -10,7 +10,8 @@ import (
 )
 
 // GenerateIdentity creates a new Ed25519 keypair and AgentIdentity.
-func GenerateIdentity(agentType string) (*AgentIdentity, ed25519.PrivateKey, error) {
+// framework should describe the agent's framework (e.g. "Go", "CrewAI").
+func GenerateIdentity(framework string) (*AgentIdentity, ed25519.PrivateKey, error) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return nil, nil, fmt.Errorf("generate ed25519 key: %w", err)
@@ -19,25 +20,28 @@ func GenerateIdentity(agentType string) (*AgentIdentity, ed25519.PrivateKey, err
 	pubB64 := base64.StdEncoding.EncodeToString(pub)
 	identity := &AgentIdentity{
 		AgentID:      agentID,
-		AgentType:    agentType,
-		PublicKeyB64: pubB64,
+		Framework:    framework,
+		Capabilities: []string{},
+		PublicKey:    pubB64,
+		Modality:     []string{"text"},
 	}
 	return identity, priv, nil
 }
 
-// Sign signs payload bytes with the private key and returns a base64url-encoded signature.
+// Sign signs payload bytes with the private key and returns a standard base64-encoded signature.
+// Uses standard (not URL-safe) base64 to match Python's base64.b64encode().
 func Sign(privKey ed25519.PrivateKey, payload []byte) string {
 	sig := ed25519.Sign(privKey, payload)
-	return base64.URLEncoding.EncodeToString(sig)
+	return base64.StdEncoding.EncodeToString(sig)
 }
 
-// Verify checks a base64url-encoded signature against the payload.
+// Verify checks a standard base64-encoded signature against the payload.
 func Verify(pubKeyB64 string, payload []byte, sigB64 string) bool {
 	pubBytes, err := base64.StdEncoding.DecodeString(pubKeyB64)
 	if err != nil {
 		return false
 	}
-	sigBytes, err := base64.URLEncoding.DecodeString(sigB64)
+	sigBytes, err := base64.StdEncoding.DecodeString(sigB64)
 	if err != nil {
 		return false
 	}

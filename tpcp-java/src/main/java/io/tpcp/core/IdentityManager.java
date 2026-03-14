@@ -39,12 +39,15 @@ public class IdentityManager {
     }
 
     /** Creates an AgentIdentity for this manager's public key. */
-    public AgentIdentity createIdentity(String agentType) {
+    public AgentIdentity createIdentity(String framework) {
         String pubB64 = Base64.getEncoder().encodeToString(publicKey.getEncoded());
-        return new AgentIdentity(UUID.randomUUID().toString(), agentType, pubB64);
+        return new AgentIdentity(UUID.randomUUID().toString(), framework, pubB64);
     }
 
-    /** Signs a JSON payload. Returns base64url-encoded signature. */
+    /**
+     * Signs a JSON payload.
+     * Returns standard base64-encoded signature (matches Python's base64.b64encode()).
+     */
     public String sign(JsonNode payload) {
         try {
             byte[] canonical = toCanonicalJson(payload);
@@ -52,17 +55,17 @@ public class IdentityManager {
             signer.init(true, privateKey);
             signer.update(canonical, 0, canonical.length);
             byte[] sig = signer.generateSignature();
-            return Base64.getUrlEncoder().withoutPadding().encodeToString(sig);
+            return Base64.getEncoder().encodeToString(sig);
         } catch (Exception e) {
             throw new RuntimeException("Sign failed", e);
         }
     }
 
-    /** Verifies a base64url-encoded Ed25519 signature against a JSON payload. */
+    /** Verifies a standard base64-encoded Ed25519 signature against a JSON payload. */
     public static boolean verify(String pubKeyB64, JsonNode payload, String sigB64) {
         try {
             byte[] pubBytes = Base64.getDecoder().decode(pubKeyB64);
-            byte[] sigBytes = Base64.getUrlDecoder().decode(sigB64);
+            byte[] sigBytes = Base64.getDecoder().decode(sigB64);
             byte[] canonical = toCanonicalJson(payload);
             Ed25519PublicKeyParameters pk = new Ed25519PublicKeyParameters(pubBytes, 0);
             Ed25519Signer verifier = new Ed25519Signer();

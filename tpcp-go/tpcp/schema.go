@@ -10,36 +10,43 @@ const PROTOCOL_VERSION = "0.4.0"
 const BROADCAST_ID = "00000000-0000-0000-0000-000000000000"
 
 // Intent identifies the purpose of a TPCP message.
+// Wire-format values must match the canonical Python/TS SDK exactly.
 type Intent string
 
 const (
-	IntentConnect      Intent = "Connect"
-	IntentDisconnect   Intent = "Disconnect"
-	IntentHandshake    Intent = "Handshake"
-	IntentTaskRequest  Intent = "TaskRequest"
-	IntentTaskResponse Intent = "TaskResponse"
-	IntentStateSync    Intent = "StateSync"
-	IntentMemorySync   Intent = "MemorySync"
-	IntentMediaShare   Intent = "MediaShare"
-	IntentACK          Intent = "ACK"
-	IntentNACK         Intent = "NACK"
-	IntentBroadcast    Intent = "Broadcast"
+	IntentHandshake       Intent = "Handshake"
+	IntentTaskRequest     Intent = "Task_Request"
+	IntentTaskResponse    Intent = "Task_Response"
+	IntentStateSync       Intent = "State_Sync"
+	IntentStateSyncVector Intent = "State_Sync_Vector"
+	IntentMemorySync      Intent = "Memory_Sync"
+	IntentMediaShare      Intent = "Media_Share"
+	IntentCritique        Intent = "Critique"
+	IntentTerminate       Intent = "Terminate"
+	IntentACK             Intent = "ACK"
+	IntentNACK            Intent = "NACK"
+	IntentBroadcast       Intent = "Broadcast"
 )
 
 // AgentIdentity describes a TPCP agent.
+// Field names match the canonical Python SDK (public_key, framework, capabilities, modality).
 type AgentIdentity struct {
-	AgentID      string `json:"agent_id"`
-	AgentType    string `json:"agent_type"`
-	PublicKeyB64 string `json:"public_key_b64"`
+	AgentID      string   `json:"agent_id"`
+	Framework    string   `json:"framework"`
+	Capabilities []string `json:"capabilities"`
+	PublicKey    string   `json:"public_key"`
+	Modality     []string `json:"modality"`
 }
 
 // MessageHeader is the envelope header present on every TPCP message.
+// Timestamp is an ISO 8601 UTC string to match Python's datetime serialization.
 type MessageHeader struct {
 	MessageID       string `json:"message_id"`
+	Timestamp       string `json:"timestamp"`
 	SenderID        string `json:"sender_id"`
 	ReceiverID      string `json:"receiver_id"`
 	Intent          Intent `json:"intent"`
-	TimestampMs     int64  `json:"timestamp_ms"`
+	TTL             int    `json:"ttl"`
 	ProtocolVersion string `json:"protocol_version"`
 }
 
@@ -56,6 +63,7 @@ type TPCPEnvelope struct {
 type TextPayload struct {
 	PayloadType string `json:"payload_type"`
 	Content     string `json:"content"`
+	Language    string `json:"language,omitempty"`
 }
 
 // BinaryPayload carries base64-encoded binary data.
@@ -90,8 +98,8 @@ type MemoryPayload struct {
 
 // ThoughtPayload carries an agent's internal reasoning step.
 type ThoughtPayload struct {
-	PayloadType string `json:"payload_type"`
-	Thought     string `json:"thought"`
+	PayloadType string  `json:"payload_type"`
+	Thought     string  `json:"thought"`
 	Confidence  float64 `json:"confidence,omitempty"`
 }
 
@@ -113,7 +121,7 @@ type TelemetryPayload struct {
 
 // NewTextPayload creates a TextPayload with the correct payload_type tag.
 func NewTextPayload(content string) *TextPayload {
-	return &TextPayload{PayloadType: "text", Content: content}
+	return &TextPayload{PayloadType: "text", Content: content, Language: "en"}
 }
 
 // NewTelemetryPayload creates a TelemetryPayload.

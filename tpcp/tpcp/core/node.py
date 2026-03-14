@@ -535,18 +535,36 @@ class TPCPNode:
 
     async def send_broadcast(self, intent: Intent, payload: Payload) -> int:
         """
-        Send an envelope to all registered peers.
+        Send a broadcast message to all reachable peers.
 
-        Uses the nil UUID (00000000-...) as receiver_id, per the TPCP broadcast convention.
-        The relay also fans out messages with this receiver_id to all registered agents.
+        When connected to an A-DNS relay, sends ONE envelope with receiver_id=BROADCAST_UUID
+        so the relay fans out to all registered agents (including those not directly connected
+        to this node). Falls back to direct fan-out when in P2P-only mode.
 
         Returns:
-            Number of peers the message was dispatched to.
+            Number of messages dispatched (1 when relay is used, N peers in P2P mode).
         """
+        payload_dict = payload.model_dump()
+        signature_str = self.identity_manager.sign_payload(payload_dict)
+
+        if self._adns_ws:
+            # Relay mode: send one message; relay handles fan-out to all registered nodes.
+            header = self._create_header(receiver_id=BROADCAST_UUID, intent=intent)
+            envelope = TPCPEnvelope(header=header, payload=payload, signature=signature_str)
+            try:
+                await self._adns_ws.send(envelope.model_dump_json())
+                logger.info(f"[Broadcast] Sent via relay to BROADCAST_UUID (intent={intent.value})")
+                return 1
+            except Exception as exc:
+                logger.warning(f"[Broadcast] Relay send failed: {exc} — falling back to direct fan-out")
+
+        # P2P fallback: fan-out individually to all locally-known peers.
         dispatched = 0
         for peer_id in list(self.peer_registry.keys()):
             try:
-                await self.send_message(target_id=peer_id, intent=intent, payload=payload)
+                header = self._create_header(receiver_id=peer_id, intent=intent)
+                envelope = TPCPEnvelope(header=header, payload=payload, signature=signature_str)
+                await self._dispatch_envelope(peer_id, envelope)
                 dispatched += 1
             except Exception as exc:
                 logger.warning(f"[Broadcast] Failed to dispatch to {peer_id}: {exc}")

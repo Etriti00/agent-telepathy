@@ -23,8 +23,12 @@ type TPCPNode struct {
 	Memory   *LWWMap
 	DLQ      *DLQ
 
-	handlers map[Intent]func(*TPCPEnvelope)
+	handlers   map[Intent]func(*TPCPEnvelope)
 	handlersMu sync.RWMutex
+
+	// peerKeys maps agent_id → base64 public key for inbound signature verification.
+	peerKeys   map[string]string
+	peerKeysMu sync.RWMutex
 
 	peers   map[string]*websocket.Conn
 	peersMu sync.RWMutex
@@ -36,13 +40,14 @@ type TPCPNode struct {
 // NewTPCPNode creates a TPCPNode with the given identity and optional private key.
 func NewTPCPNode(identity *AgentIdentity, privKey ed25519.PrivateKey) *TPCPNode {
 	return &TPCPNode{
-		Identity: identity,
-		PrivKey:  privKey,
-		Memory:   NewLWWMap(),
-		DLQ:      NewDLQ(),
-		handlers: make(map[Intent]func(*TPCPEnvelope)),
-		peers:    make(map[string]*websocket.Conn),
-		done:     make(chan struct{}),
+		Identity:   identity,
+		PrivKey:    privKey,
+		Memory:     NewLWWMap(),
+		DLQ:        NewDLQ(),
+		handlers:   make(map[Intent]func(*TPCPEnvelope)),
+		peerKeys:   make(map[string]string),
+		peers:      make(map[string]*websocket.Conn),
+		done:       make(chan struct{}),
 	}
 }
 
@@ -53,7 +58,14 @@ func (n *TPCPNode) RegisterHandler(intent Intent, handler func(*TPCPEnvelope)) {
 	n.handlers[intent] = handler
 }
 
-// Listen starts a WebSocket server on the given address (e.g. ":9000").
+// RegisterPeerKey registers the public key for a known peer so inbound messages can be verified.
+func (n *TPCPNode) RegisterPeerKey(agentID, pubKeyB64 string) {
+	n.peerKeysMu.Lock()
+	defer n.peerKeysMu.Unlock()
+	n.peerKeys[agentID] = pubKeyB64
+}
+
+// Listen starts a WebSocket server on the given address (e.g. ":8765").
 func (n *TPCPNode) Listen(addr string) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", n.handleUpgrade)
@@ -111,16 +123,17 @@ func (n *TPCPNode) SendMessage(peerID string, intent Intent, payload interface{}
 	envelope := &TPCPEnvelope{
 		Header: MessageHeader{
 			MessageID:       randomUUID(),
+			Timestamp:       time.Now().UTC().Format(time.RFC3339Nano),
 			SenderID:        n.Identity.AgentID,
 			ReceiverID:      peerID,
 			Intent:          intent,
-			TimestampMs:     time.Now().UnixMilli(),
+			TTL:             30,
 			ProtocolVersion: PROTOCOL_VERSION,
 		},
 		Payload: rawPayload,
 	}
 
-	// Sign if we have a private key
+	// Sign the payload with canonical JSON if we have a private key.
 	if n.PrivKey != nil {
 		canonical, err := CanonicalJSON(payload)
 		if err == nil {
@@ -172,6 +185,24 @@ func (n *TPCPNode) readLoop(peerID string, conn *websocket.Conn) {
 			log.Printf("[TPCPNode] invalid envelope from %s: %v", peerID, err)
 			continue
 		}
+
+		// Verify inbound signature if a public key is registered for the sender.
+		if env.Signature != "" {
+			n.peerKeysMu.RLock()
+			pubKey, known := n.peerKeys[env.Header.SenderID]
+			n.peerKeysMu.RUnlock()
+			if known {
+				var payloadVal interface{}
+				if err := json.Unmarshal(env.Payload, &payloadVal); err == nil {
+					canonical, err := CanonicalJSON(payloadVal)
+					if err == nil && !Verify(pubKey, canonical, env.Signature) {
+						log.Printf("[TPCPNode] signature verification FAILED for message from %s — dropping", env.Header.SenderID)
+						continue
+					}
+				}
+			}
+		}
+
 		n.dispatch(&env)
 	}
 }

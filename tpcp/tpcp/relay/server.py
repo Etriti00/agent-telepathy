@@ -24,6 +24,7 @@ Agent Domain Name System (A-DNS) Relay Server with:
 """
 
 import asyncio
+import http
 import json
 import os
 import time
@@ -277,13 +278,36 @@ class ADNSRelayServer:
             del self._pending_challenges[sender_id]
             await websocket.close(1008, "Challenge verification failed")
 
+    async def _process_request(self, path: str, request_headers) -> Optional[tuple]:
+        """Handle HTTP requests before WebSocket upgrade.
+        Returns a (status, headers, body) tuple for HTTP-only paths, or None to continue
+        with WebSocket upgrade.
+        """
+        if path == "/health":
+            body = json.dumps({
+                "status": "ok",
+                "registered_nodes": len(self.registry),
+            }).encode("utf-8")
+            headers = [
+                ("Content-Type", "application/json"),
+                ("Content-Length", str(len(body))),
+            ]
+            return http.HTTPStatus.OK, headers, body
+        return None
+
     async def start(self) -> None:
         logger.info(f"Starting A-DNS Global Relay on ws://{self.host}:{self.port}")
         logger.info(f"  Rate limit: {self.rate_limit} msg/sec, burst: {self.burst_limit}")
         logger.info(f"  Challenge-response authentication: ENABLED")
-        async with websockets.serve(self._handle_connection, self.host, self.port):
+        async with websockets.serve(
+            self._handle_connection,
+            self.host,
+            self.port,
+            process_request=self._process_request,
+        ):
             await asyncio.Future()
 
 if __name__ == "__main__":
-    server = ADNSRelayServer("0.0.0.0", 9000)
+    port = int(os.environ.get("TPCP_PORT", "8765"))
+    server = ADNSRelayServer("0.0.0.0", port)
     asyncio.run(server.start())

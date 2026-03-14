@@ -4,19 +4,19 @@ use ed25519_dalek::{Signer, Verifier, SigningKey, VerifyingKey, Signature};
 use serde_json::Value;
 
 /// Signs a JSON payload with an Ed25519 private key.
-/// Returns base64url-encoded signature.
+/// Returns standard base64-encoded signature (matches Python's base64.b64encode()).
 pub fn sign(key: &SigningKey, payload: &[u8]) -> String {
     let sig: Signature = key.sign(payload);
-    general_purpose::URL_SAFE_NO_PAD.encode(sig.to_bytes())
+    general_purpose::STANDARD.encode(sig.to_bytes())
 }
 
-/// Verifies a base64url-encoded Ed25519 signature.
+/// Verifies a standard base64-encoded Ed25519 signature.
 pub fn verify(pub_key_b64: &str, payload: &[u8], sig_b64: &str) -> bool {
     let pub_bytes = match general_purpose::STANDARD.decode(pub_key_b64) {
         Ok(b) => b,
         Err(_) => return false,
     };
-    let sig_bytes = match general_purpose::URL_SAFE_NO_PAD.decode(sig_b64) {
+    let sig_bytes = match general_purpose::STANDARD.decode(sig_b64) {
         Ok(b) => b,
         Err(_) => return false,
     };

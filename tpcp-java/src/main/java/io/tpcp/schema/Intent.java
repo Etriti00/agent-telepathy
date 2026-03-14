@@ -2,16 +2,20 @@ package io.tpcp.schema;
 
 import com.fasterxml.jackson.annotation.JsonValue;
 
-/** TPCP message intent — identifies the purpose of a message. */
+/**
+ * TPCP message intent — identifies the purpose of a message.
+ * Wire-format values match the canonical Python/TS SDK exactly.
+ */
 public enum Intent {
-    CONNECT("Connect"),
-    DISCONNECT("Disconnect"),
     HANDSHAKE("Handshake"),
-    TASK_REQUEST("TaskRequest"),
-    TASK_RESPONSE("TaskResponse"),
-    STATE_SYNC("StateSync"),
-    MEMORY_SYNC("MemorySync"),
-    MEDIA_SHARE("MediaShare"),
+    TASK_REQUEST("Task_Request"),
+    TASK_RESPONSE("Task_Response"),
+    STATE_SYNC("State_Sync"),
+    STATE_SYNC_VECTOR("State_Sync_Vector"),
+    MEMORY_SYNC("Memory_Sync"),
+    MEDIA_SHARE("Media_Share"),
+    CRITIQUE("Critique"),
+    TERMINATE("Terminate"),
     ACK("ACK"),
     NACK("NACK"),
     BROADCAST("Broadcast");

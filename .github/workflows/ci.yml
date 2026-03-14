@@ -54,6 +54,66 @@ jobs:
         cd tpcp
         pytest tests/test_canbus_adapter.py -v --timeout=30
 
+  go-tests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.22'
+    - name: Download modules
+      run: |
+        cd tpcp-go
+        go mod download
+    - name: Build
+      run: |
+        cd tpcp-go
+        go build ./...
+    - name: Run tests
+      run: |
+        cd tpcp-go
+        go test ./... -v -timeout 60s
+
+  rust-tests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: thumbv7em-none-eabihf
+    - name: Cache cargo
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: tpcp-rs
+    - name: Build (std)
+      run: |
+        cd tpcp-rs
+        cargo build --all
+    - name: Run tests
+      run: |
+        cd tpcp-rs
+        cargo test --all
+    - name: Verify no_std compile (ARM Cortex-M)
+      run: |
+        cd tpcp-rs
+        cargo build --target thumbv7em-none-eabihf -p tpcp-core --no-default-features
+
+  java-tests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '21'
+    - name: Build and test
+      run: |
+        cd tpcp-java
+        ./gradlew build test
+
   typescript-tests:
     runs-on: ubuntu-latest
     steps:
