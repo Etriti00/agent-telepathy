@@ -7,7 +7,7 @@ to a safety-critical robot or industrial controller node.
 """
 from __future__ import annotations
 
-from typing import Dict, Optional, Set, Tuple
+from typing import Dict, Tuple
 from uuid import UUID
 
 from tpcp.schemas.envelope import Intent

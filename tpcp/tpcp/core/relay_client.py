@@ -37,7 +37,6 @@ Use case examples:
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from tpcp.core.node import TPCPNode
 from tpcp.schemas.envelope import AgentIdentity

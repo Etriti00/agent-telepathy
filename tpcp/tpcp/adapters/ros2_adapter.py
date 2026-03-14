@@ -24,10 +24,9 @@ Maps ROS2 Pub/Sub messages natively to TPCP CRDTSyncPayloads and MediaPayloads.
 Requires rclpy to be installed in the robot's environment.
 """
 
-import asyncio
 import base64
 import logging
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Optional
 from uuid import UUID
 
 from tpcp.adapters.base import BaseFrameworkAdapter

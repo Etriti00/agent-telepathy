@@ -8,7 +8,8 @@ def keygen(framework, output):
     """Generate a new Ed25519 identity keypair."""
     from tpcp.security.crypto import AgentIdentityManager
     from uuid import uuid4
-    import json, base64
+    import json
+    import base64
 
     mgr = AgentIdentityManager()
     agent_id = str(uuid4())

@@ -2,12 +2,9 @@ import asyncio
 import json
 import logging
 from uuid import uuid4
-from typing import Any, Dict
 
 from tpcp.core.node import TPCPNode
-from tpcp.schemas.envelope import AgentIdentity, Intent, CRDTSyncPayload, TPCPEnvelope
-from tpcp.adapters.langgraph_adapter import LangGraphAdapter
-from tpcp.adapters.crewai_adapter import CrewAIAdapter
+from tpcp.schemas.envelope import AgentIdentity, Intent, CRDTSyncPayload
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)

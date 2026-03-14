@@ -233,7 +233,7 @@ class TPCPNode:
             # Handle A-DNS challenge
             if data.get("type") == "ADNS_CHALLENGE":
                 nonce = data.get("nonce", "")
-                logger.info(f"Received A-DNS challenge. Signing nonce...")
+                logger.info("Received A-DNS challenge. Signing nonce...")
                 
                 # Sign the nonce with our private key
                 nonce_bytes = nonce.encode('utf-8')
@@ -436,7 +436,7 @@ class TPCPNode:
     async def _handle_vector_sync(self, envelope: TPCPEnvelope, websocket: WebSocketServerProtocol) -> None:
         """Ingest dense contextual vectors into the local VectorBank."""
         if not isinstance(envelope.payload, VectorEmbeddingPayload):
-            logger.error(f"STATE_SYNC_VECTOR envelope lacked VectorEmbeddingPayload.")
+            logger.error("STATE_SYNC_VECTOR envelope lacked VectorEmbeddingPayload.")
             return
 
         payload = envelope.payload

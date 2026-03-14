@@ -16,11 +16,11 @@
 #
 # For commercial licensing inquiries, see COMMERCIAL_LICENSE.md
 
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional
 from uuid import UUID
 
 try:
-    import llama_index
+    import llama_index  # noqa: F401
     LLAMAINDEX_AVAILABLE = True
 except ImportError:
     LLAMAINDEX_AVAILABLE = False

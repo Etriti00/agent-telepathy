@@ -5,7 +5,7 @@ from uuid import uuid4
 from websockets.server import WebSocketServerProtocol
 
 from tpcp.core.node import TPCPNode
-from tpcp.schemas.envelope import AgentIdentity, Intent, TextPayload, TPCPEnvelope
+from tpcp.schemas.envelope import AgentIdentity, Intent, TPCPEnvelope
 from tpcp.adapters.langgraph_adapter import LangGraphAdapter
 from tpcp.adapters.crewai_adapter import CrewAIAdapter
 
@@ -57,12 +57,12 @@ async def main():
         
         # We explicitly map the UUID to the socket connection in memory.
         # This allows all future `send_message` commands to route instantly without discovery.
-        node_b.register_peer(sender_identity, f"ws://127.0.0.1:8000")
+        node_b.register_peer(sender_identity, "ws://127.0.0.1:8000")
         print(f"[Node B (CrewAI)] ✅ Registered new peer '{sender_identity.framework}' in memory.")
 
         # In TPCP, handshakes act as two-way TCP syn-acks.
         # Node B confirms receipt by returning a native framework thought using an adapter.
-        print(f"[Node B (CrewAI)] 📤 Sending CAPABILITY_ACK response back to Node A...")
+        print("[Node B (CrewAI)] 📤 Sending CAPABILITY_ACK response back to Node A...")
         
         # This dictionary mimics CrewAI's arbitrary internal dictionary structures.
         native_ack_thought = {
@@ -91,7 +91,7 @@ async def main():
         print("Unpacked payload translated to LangGraph State Dict:")
         print(json.dumps(native_state_update, indent=2))
         print("-" * 40)
-        print(f"[Node A (LangGraph)] 🤝 Handshake successful. Frameworks are bridged.")
+        print("[Node A (LangGraph)] 🤝 Handshake successful. Frameworks are bridged.")
         
         # Signal the event loop to finish
         execution_complete.set()
@@ -108,7 +108,7 @@ async def main():
 
     await asyncio.sleep(0.5) # ensure servers are up
     
-    print(f"\n[Node A (LangGraph)] 📡 Broadcasting DISCOVER_SYN to seed peer (ws://127.0.0.1:8001)...")
+    print("\n[Node A (LangGraph)] 📡 Broadcasting DISCOVER_SYN to seed peer (ws://127.0.0.1:8001)...")
     # Broadcast Discovery automatically generates an Intent.HANDSHAKE envelope, 
     # signs it with Ed25519 cryptography, and loops it outward to seed servers.
     await node_a.broadcast_discovery(["ws://127.0.0.1:8001"])

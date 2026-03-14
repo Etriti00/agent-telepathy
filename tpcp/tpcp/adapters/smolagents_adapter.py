@@ -20,7 +20,7 @@ from typing import Any, Dict, Optional, Union
 from uuid import UUID
 
 try:
-    import smolagents
+    import smolagents  # noqa: F401
     SMOLAGENTS_AVAILABLE = True
 except ImportError:
     SMOLAGENTS_AVAILABLE = False

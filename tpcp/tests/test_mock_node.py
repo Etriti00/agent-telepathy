@@ -1,5 +1,4 @@
 """Tests for MockTPCPNode."""
-import asyncio
 import pytest
 from tpcp.testing import MockTPCPNode
 from tpcp.schemas.envelope import Intent, TextPayload

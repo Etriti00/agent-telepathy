@@ -16,11 +16,11 @@
 #
 # For commercial licensing inquiries, see COMMERCIAL_LICENSE.md
 
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional
 from uuid import UUID
 
 try:
-    import semantic_kernel
+    import semantic_kernel  # noqa: F401
     SEMANTIC_KERNEL_AVAILABLE = True
 except ImportError:
     SEMANTIC_KERNEL_AVAILABLE = False

@@ -13,11 +13,11 @@ def send(target_url, intent, message, identity):
     INTENT: e.g. TASK_REQUEST, STATE_SYNC
     MESSAGE: text content
     """
-    import asyncio, json
+    import asyncio
+    import json
     from tpcp.core.node import TPCPNode
     from tpcp.schemas.envelope import AgentIdentity, Intent as IntentEnum, TextPayload
     from tpcp.security.crypto import AgentIdentityManager
-    from uuid import UUID
 
     async def _send():
         if identity:

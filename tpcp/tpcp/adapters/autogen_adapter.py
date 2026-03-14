@@ -20,7 +20,7 @@ from typing import Any, Dict, Optional
 from uuid import UUID
 
 try:
-    import autogen
+    import autogen  # noqa: F401
     AUTOGEN_AVAILABLE = True
 except ImportError:
     AUTOGEN_AVAILABLE = False

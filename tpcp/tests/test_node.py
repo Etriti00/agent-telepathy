@@ -1,10 +1,9 @@
 import pytest
-import asyncio
 import tempfile
 from pathlib import Path
 from uuid import uuid4
 
-from tpcp.schemas.envelope import AgentIdentity, Intent, TextPayload, CRDTSyncPayload, VectorEmbeddingPayload
+from tpcp.schemas.envelope import AgentIdentity, Intent, TextPayload
 from tpcp.core.node import TPCPNode
 from tpcp.core.queue import MessageQueue
 from tpcp.security.crypto import AgentIdentityManager

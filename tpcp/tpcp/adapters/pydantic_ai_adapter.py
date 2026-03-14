@@ -16,11 +16,11 @@
 #
 # For commercial licensing inquiries, see COMMERCIAL_LICENSE.md
 
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional
 from uuid import UUID
 
 try:
-    import pydantic_ai
+    import pydantic_ai  # noqa: F401
     PYDANTIC_AI_AVAILABLE = True
 except ImportError:
     PYDANTIC_AI_AVAILABLE = False

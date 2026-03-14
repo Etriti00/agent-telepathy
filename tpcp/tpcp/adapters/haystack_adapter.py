@@ -16,11 +16,11 @@
 #
 # For commercial licensing inquiries, see COMMERCIAL_LICENSE.md
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Optional, Union
 from uuid import UUID
 
 try:
-    import haystack
+    import haystack  # noqa: F401
     HAYSTACK_AVAILABLE = True
 except ImportError:
     HAYSTACK_AVAILABLE = False

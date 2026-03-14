@@ -57,7 +57,7 @@ async def run_telepathy_demo():
         raw_text_fallback=raw_context
     )
     
-    print(f"[Node A] Broadcasting 1536d Tensor to Node B via STATE_SYNC_VECTOR...")
+    print("[Node A] Broadcasting 1536d Tensor to Node B via STATE_SYNC_VECTOR...")
     
     # Node A directly transmits raw vector cognition straight into Node B's memory banks
     await node_a.send_message(identity_b.agent_id, Intent.STATE_SYNC_VECTOR, payload_a)

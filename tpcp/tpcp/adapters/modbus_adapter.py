@@ -164,9 +164,9 @@ class ModbusAdapter(BaseFrameworkAdapter):
         address = int(write_cmd["address"])
         value = write_cmd["value"]
         if cmd_type == "coil":
-            await self._client.write_coil(address, bool(value), unit=self.unit_id)
+            await self._client.write_coil(address, bool(value), slave=self.unit_id)
         else:
-            await self._client.write_register(address, int(value), unit=self.unit_id)
+            await self._client.write_register(address, int(value), slave=self.unit_id)
 
     async def execute_write(self, write_cmd: Dict[str, Any]) -> bool:
         """
@@ -291,13 +291,13 @@ class ModbusAdapter(BaseFrameworkAdapter):
                         read_ok = False
                         value = 0
                         if register_type in ("coil", "discrete"):
-                            result = await self._client.read_coils(address, 1, unit=self.unit_id)
+                            result = await self._client.read_coils(address, 1, slave=self.unit_id)
                             if result and not result.isError():
                                 value = result.bits[0]
                                 read_ok = True
                         else:
                             result = await self._client.read_holding_registers(
-                                address, 1, unit=self.unit_id
+                                address, 1, slave=self.unit_id
                             )
                             if result and not result.isError():
                                 value = result.registers[0]

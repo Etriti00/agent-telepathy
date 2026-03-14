@@ -7,11 +7,10 @@ in-process queues. Use MockTPCPNode.connect_pair() to link two mock nodes.
 from __future__ import annotations
 import asyncio
 from typing import Any, Callable, Dict, List, Optional
-from uuid import UUID, uuid4
+from uuid import UUID
 from tpcp.schemas.envelope import (
-    AgentIdentity, Intent, TextPayload, TPCPEnvelope, MessageHeader
+    AgentIdentity, Intent, TPCPEnvelope, MessageHeader
 )
-from tpcp.schemas.envelope import PROTOCOL_VERSION
 
 
 class MockTPCPNode:

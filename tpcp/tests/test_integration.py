@@ -3,7 +3,6 @@ Integration tests: full 2-node TPCP handshake and message round-trip over real W
 """
 import asyncio
 import pytest
-from uuid import uuid4
 
 from tpcp.core.node import TPCPNode
 from tpcp.schemas.envelope import AgentIdentity, Intent, TextPayload

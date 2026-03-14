@@ -31,10 +31,10 @@ import time
 import logging
 from typing import Dict, Optional
 
-BROADCAST_ID = "00000000-0000-0000-0000-000000000000"
-
 import websockets
 from websockets.server import WebSocketServerProtocol
+
+BROADCAST_ID = "00000000-0000-0000-0000-000000000000"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ADNS-Relay")
@@ -298,7 +298,7 @@ class ADNSRelayServer:
     async def start(self) -> None:
         logger.info(f"Starting A-DNS Global Relay on ws://{self.host}:{self.port}")
         logger.info(f"  Rate limit: {self.rate_limit} msg/sec, burst: {self.burst_limit}")
-        logger.info(f"  Challenge-response authentication: ENABLED")
+        logger.info("  Challenge-response authentication: ENABLED")
         async with websockets.serve(
             self._handle_connection,
             self.host,

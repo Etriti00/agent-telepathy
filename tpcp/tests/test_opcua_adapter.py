@@ -4,7 +4,6 @@ Tests for OPCUAAdapter using the asyncua built-in server.
 The asyncua library ships a Server class that can run entirely in-process, so no
 external OPC-UA infrastructure is required.
 """
-import asyncio
 import pytest
 
 pytest.importorskip("asyncua", reason="asyncua not installed; skip OPC-UA tests")

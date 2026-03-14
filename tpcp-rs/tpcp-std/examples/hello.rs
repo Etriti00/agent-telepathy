@@ -8,8 +8,10 @@ async fn main() {
     // Server
     let server_identity = AgentIdentity {
         agent_id: "server-001".into(),
-        agent_type: "hello-server".into(),
-        public_key_b64: "".into(),
+        framework: "hello-server".into(),
+        capabilities: vec![],
+        public_key: "".into(),
+        modality: vec!["text".into()],
     };
     let server = Arc::new(TPCPNode::new(server_identity));
 
@@ -24,8 +26,10 @@ async fn main() {
     // Client
     let client_identity = AgentIdentity {
         agent_id: "client-001".into(),
-        agent_type: "hello-client".into(),
-        public_key_b64: "".into(),
+        framework: "hello-client".into(),
+        capabilities: vec![],
+        public_key: "".into(),
+        modality: vec!["text".into()],
     };
     let client = TPCPNode::new(client_identity);
 

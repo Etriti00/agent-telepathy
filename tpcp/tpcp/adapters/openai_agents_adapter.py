@@ -16,11 +16,11 @@
 #
 # For commercial licensing inquiries, see COMMERCIAL_LICENSE.md
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Optional, Union
 from uuid import UUID
 
 try:
-    from openai import OpenAI
+    from openai import OpenAI  # noqa: F401
     OPENAI_AGENTS_AVAILABLE = True
 except ImportError:
     OPENAI_AGENTS_AVAILABLE = False

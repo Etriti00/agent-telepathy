@@ -46,7 +46,7 @@ _BINARY_THRESHOLD_BYTES = 65536
 
 try:
     from asyncua import Client as OPCUAClient
-    from asyncua import ua
+    from asyncua import ua  # noqa: F401
     OPCUA_AVAILABLE = True
 except ImportError:
     OPCUA_AVAILABLE = False

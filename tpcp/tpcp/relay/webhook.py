@@ -25,16 +25,15 @@ to the cryptographically enforced TPCP Agent WebSocket Mesh.
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Optional
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from tpcp.schemas.envelope import (
     AgentIdentity,
     Intent,
-    TPCPEnvelope,
     TextPayload,
     MessageHeader,
     PROTOCOL_VERSION
@@ -94,15 +93,6 @@ async def trigger_swarm_intent(req: WebhookIntentRequest):
         protocol_version=PROTOCOL_VERSION
     )
 
-    payload_dict = payload.model_dump()
-    signature = _identity_manager.sign_payload(payload_dict)
-
-    envelope = TPCPEnvelope(
-        header=header,
-        payload=payload,
-        signature=signature
-    )
-
     try:
         # Route the securely validated Envelope to the main TPCP swarm logic node.
         if _local_tpcp_node:
@@ -126,7 +116,6 @@ async def get_health():
 if __name__ == "__main__":
     import uvicorn
     import asyncio
-    import os
     
     # Standalone execution example for the webhook gateway
     async def run_gateway():
