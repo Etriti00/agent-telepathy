@@ -38,6 +38,7 @@ from pydantic import ValidationError
 
 from tpcp.schemas.envelope import (
     AgentIdentity,
+    AckInfo,
     TPCPEnvelope,
     MessageHeader,
     Intent,
@@ -71,21 +72,23 @@ class TPCPNode:
     """
 
     def __init__(
-        self, 
-        identity: AgentIdentity, 
-        host: str = "127.0.0.1", 
-        port: int = 8000, 
+        self,
+        identity: AgentIdentity,
+        host: str = "127.0.0.1",
+        port: int = 8000,
         adns_url: Optional[str] = None,
         identity_manager: Optional[AgentIdentityManager] = None,
         key_path: Optional[Path] = None,
         auto_save_key: bool = False,
-        ssl_context: Optional[ssl.SSLContext] = None
+        ssl_context: Optional[ssl.SSLContext] = None,
+        auto_ack: bool = False
     ):
         self.identity = identity
         self.host = host
         self.port = port
         self.adns_url = adns_url
         self.ssl_context = ssl_context
+        self.auto_ack = auto_ack
         self._adns_ws: Optional[websockets.client.WebSocketClientProtocol] = None
         self._adns_registered = False
         
@@ -117,13 +120,18 @@ class TPCPNode:
         # Deduplication Cache (Replay protection)
         self._seen_messages: Dict[UUID, float] = {}
 
+        # Pending ACK futures: maps message_id to Future waiting for ACK/NACK
+        self._pending_acks: Dict[UUID, asyncio.Future] = {}
+
         # Intent routing table
         self.handlers: Dict[Intent, IntentHandler] = {}
-        
+
         # Register internal default handlers
         self.register_handler(Intent.HANDSHAKE, self._handle_handshake)
         self.register_handler(Intent.STATE_SYNC, self._handle_state_sync)
         self.register_handler(Intent.STATE_SYNC_VECTOR, self._handle_vector_sync)
+        self.register_handler(Intent.ACK, self._handle_ack)
+        self.register_handler(Intent.NACK, self._handle_nack)
         
         self._server: Optional[websockets.server.WebSocketServer] = None
         self._running = False
@@ -342,6 +350,9 @@ class TPCPNode:
             handler = self.handlers.get(envelope.header.intent)
             if handler:
                 await handler(envelope, websocket)
+                if self.auto_ack and envelope.header.intent not in (Intent.ACK, Intent.NACK):
+                    ack_envelope = self._create_ack_envelope(envelope)
+                    await self._dispatch_envelope(envelope.header.sender_id, ack_envelope)
             else:
                 logger.warning(f"No handler registered for intent: {envelope.header.intent}")
                 
@@ -407,7 +418,44 @@ class TPCPNode:
         )
         logger.info(f"[Vector Bank] Size: {self.vector_bank.total_vectors}")
 
-    async def send_message(self, target_id: UUID, intent: Intent, payload: Payload) -> None:
+    async def _handle_ack(self, envelope: TPCPEnvelope, websocket) -> None:
+        """Resolve the pending Future when an ACK is received."""
+        if envelope.ack_info and envelope.ack_info.acked_message_id in self._pending_acks:
+            fut = self._pending_acks.pop(envelope.ack_info.acked_message_id)
+            if not fut.done():
+                fut.set_result(envelope)
+
+    async def _handle_nack(self, envelope: TPCPEnvelope, websocket) -> None:
+        """Reject the pending Future when a NACK is received; re-queue to DLQ."""
+        if envelope.ack_info and envelope.ack_info.acked_message_id in self._pending_acks:
+            msg_id = envelope.ack_info.acked_message_id
+            fut = self._pending_acks.pop(msg_id)
+            if not fut.done():
+                fut.set_exception(RuntimeError(f"NACK received for message {msg_id}"))
+
+    def _create_header(self, receiver_id: UUID, intent: Intent) -> MessageHeader:
+        """Create a MessageHeader for an outbound envelope."""
+        return MessageHeader(
+            sender_id=self.identity.agent_id,
+            receiver_id=receiver_id,
+            intent=intent,
+            protocol_version=PROTOCOL_VERSION
+        )
+
+    def _create_ack_envelope(self, original_envelope: TPCPEnvelope) -> TPCPEnvelope:
+        """Create an ACK envelope referencing the original message."""
+        header = self._create_header(
+            receiver_id=original_envelope.header.sender_id,
+            intent=Intent.ACK,
+        )
+        payload = TextPayload(content="OK")
+        ack_info = AckInfo(acked_message_id=original_envelope.header.message_id)
+        envelope = TPCPEnvelope(header=header, payload=payload, ack_info=ack_info)
+        if self.identity_manager:
+            envelope.signature = self.identity_manager.sign_payload(payload.model_dump())
+        return envelope
+
+    async def send_message(self, target_id: UUID, intent: Intent, payload: Payload, require_ack: bool = False) -> None:
         """Sign and dispatch a TPCP message to a specific peer in the registry."""
         header = MessageHeader(
             sender_id=self.identity.agent_id,
@@ -415,12 +463,24 @@ class TPCPNode:
             intent=intent,
             protocol_version=PROTOCOL_VERSION
         )
-        
+
         payload_dict = payload.model_dump()
         signature_str = self.identity_manager.sign_payload(payload_dict)
-        
+
         envelope = TPCPEnvelope(header=header, payload=payload, signature=signature_str)
+
+        if require_ack:
+            fut = asyncio.get_running_loop().create_future()
+            self._pending_acks[envelope.header.message_id] = fut
+
         await self._dispatch_envelope(target_id, envelope)
+
+        if require_ack:
+            try:
+                await asyncio.wait_for(fut, timeout=30.0)
+            except asyncio.TimeoutError:
+                self._pending_acks.pop(envelope.header.message_id, None)
+                raise TimeoutError(f"No ACK received for {envelope.header.message_id} within 30s")
 
     async def _get_peer_connection(self, target_id: UUID) -> Optional[websockets.client.WebSocketClientProtocol]:
         """Get or create a pooled WebSocket connection to a peer."""
