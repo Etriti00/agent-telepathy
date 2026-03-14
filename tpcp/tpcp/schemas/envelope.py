@@ -224,7 +224,7 @@ class TelemetryReading(BaseModel):
     """A single sensor reading with timestamp and optional quality indicator."""
     value: float = Field(..., description="Sensor reading value.")
     timestamp_ms: int = Field(..., description="Unix epoch timestamp in milliseconds.")
-    quality: Optional[Literal["Good", "Bad", "Uncertain"]] = None
+    quality: Optional[Literal["Good", "Bad", "Uncertain"]] = Field(default=None, description="OPC-UA quality code: 'Good', 'Bad', or 'Uncertain'.")
 
 
 class TelemetryPayload(BaseModel):
