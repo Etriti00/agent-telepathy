@@ -31,7 +31,7 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, Discriminator, Field, Tag, model_validator
 
 
-PROTOCOL_VERSION = "0.3.0"
+PROTOCOL_VERSION = "0.4.0"
 
 
 class Intent(str, Enum):
@@ -43,6 +43,9 @@ class Intent(str, Enum):
     MEDIA_SHARE = "Media_Share"
     CRITIQUE = "Critique"
     TERMINATE = "Terminate"
+    ACK = "ACK"
+    NACK = "NACK"
+    BROADCAST = "Broadcast"
 
 
 class AgentIdentity(BaseModel):
@@ -215,6 +218,41 @@ class BinaryPayload(BaseModel):
     )
 
 
+# ── TELEMETRY PAYLOAD TYPE ────────────────────────────────────────────
+
+class TelemetryReading(BaseModel):
+    """A single sensor reading with timestamp and optional quality indicator."""
+    value: float
+    timestamp_ms: int
+    quality: Optional[str] = None  # "Good", "Bad", "Uncertain"
+
+
+class TelemetryPayload(BaseModel):
+    """
+    Payload for industrial/IoT telemetry data from hardware protocols.
+    Supports OPC-UA, Modbus, CANbus, and MQTT sensor streams.
+    """
+    payload_type: Literal["telemetry"] = "telemetry"
+    sensor_id: str
+    unit: str
+    readings: List[TelemetryReading]
+    source_protocol: str  # "opcua", "modbus", "canbus", "mqtt"
+
+
+# ── ACK / CHUNK METADATA MODELS ───────────────────────────────────────
+
+class AckInfo(BaseModel):
+    """Acknowledgement metadata referencing the message being acknowledged."""
+    acked_message_id: UUID
+
+
+class ChunkInfo(BaseModel):
+    """Chunked-transfer metadata for large payloads split across multiple messages."""
+    chunk_index: int
+    total_chunks: int
+    transfer_id: UUID
+
+
 # ── DISCRIMINATED UNION ───────────────────────────────────────────────
 
 def _get_payload_type(data: Any) -> str:
@@ -232,6 +270,7 @@ Payload = Annotated[
         Annotated[AudioPayload, Tag("audio")],
         Annotated[VideoPayload, Tag("video")],
         Annotated[BinaryPayload, Tag("binary")],
+        Annotated[TelemetryPayload, Tag("telemetry")],
     ],
     Discriminator(_get_payload_type)
 ]
@@ -242,3 +281,5 @@ class TPCPEnvelope(BaseModel):
     header: MessageHeader
     payload: Payload
     signature: Optional[str] = Field(default=None, description="Cryptographic signature of the payload.")
+    ack_info: Optional[AckInfo] = None
+    chunk_info: Optional[ChunkInfo] = None
