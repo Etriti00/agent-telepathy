@@ -29,8 +29,12 @@ dependencies = [
     "websockets>=12.0",
     "httpx>=0.27.0",
     "cryptography>=42.0.0",
-    "aiosqlite>=0.20.0"
+    "aiosqlite>=0.20.0",
+    "click>=8.0.0"
 ]
+
+[project.scripts]
+tpcp = "tpcp.cli.main:cli"
 
 [project.urls]
 Homepage = "https://github.com/tpcp-protocol/tpcp"
@@ -63,6 +67,8 @@ ai-frameworks = [
     "smolagents>=1.0.0",
     "openai>=1.0.0",
     "llama-index>=0.10.0",
+    "haystack-ai>=2.0.0",
+    "semantic-kernel>=1.0.0",
 ]
 
 [tool.hatch.build.targets.wheel]

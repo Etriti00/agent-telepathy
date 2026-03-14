@@ -40,3 +40,46 @@ try:
     __all__.append("CANbusAdapter")
 except ImportError:
     pass
+
+# AI framework adapters — guarded by library availability
+try:
+    from .autogen_adapter import AutoGenAdapter
+    __all__.append("AutoGenAdapter")
+except ImportError:
+    pass
+
+try:
+    from .pydantic_ai_adapter import PydanticAIAdapter
+    __all__.append("PydanticAIAdapter")
+except ImportError:
+    pass
+
+try:
+    from .smolagents_adapter import SmolagentsAdapter
+    __all__.append("SmolagentsAdapter")
+except ImportError:
+    pass
+
+try:
+    from .openai_agents_adapter import OpenAIAgentsAdapter
+    __all__.append("OpenAIAgentsAdapter")
+except ImportError:
+    pass
+
+try:
+    from .llamaindex_adapter import LlamaIndexAdapter
+    __all__.append("LlamaIndexAdapter")
+except ImportError:
+    pass
+
+try:
+    from .haystack_adapter import HaystackAdapter
+    __all__.append("HaystackAdapter")
+except ImportError:
+    pass
+
+try:
+    from .semantic_kernel_adapter import SemanticKernelAdapter
+    __all__.append("SemanticKernelAdapter")
+except ImportError:
+    pass
