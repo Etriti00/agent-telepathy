@@ -222,9 +222,9 @@ class BinaryPayload(BaseModel):
 
 class TelemetryReading(BaseModel):
     """A single sensor reading with timestamp and optional quality indicator."""
-    value: float
-    timestamp_ms: int
-    quality: Optional[str] = None  # "Good", "Bad", "Uncertain"
+    value: float = Field(..., description="Sensor reading value.")
+    timestamp_ms: int = Field(..., description="Unix epoch timestamp in milliseconds.")
+    quality: Optional[Literal["Good", "Bad", "Uncertain"]] = None
 
 
 class TelemetryPayload(BaseModel):
@@ -233,24 +233,24 @@ class TelemetryPayload(BaseModel):
     Supports OPC-UA, Modbus, CANbus, and MQTT sensor streams.
     """
     payload_type: Literal["telemetry"] = "telemetry"
-    sensor_id: str
-    unit: str
-    readings: List[TelemetryReading]
-    source_protocol: str  # "opcua", "modbus", "canbus", "mqtt"
+    sensor_id: str = Field(..., description="Unique sensor identifier, e.g. 'opcua_ns2_i_2' or 'can_0x123'.")
+    unit: str = Field(..., description="Engineering unit, e.g. 'rpm', 'celsius', 'bar'.")
+    readings: List[TelemetryReading] = Field(..., description="Batch of timestamped readings from this sensor.")
+    source_protocol: str = Field(..., description="Origin protocol: 'opcua', 'modbus', 'canbus', or 'mqtt'.")
 
 
 # ── ACK / CHUNK METADATA MODELS ───────────────────────────────────────
 
 class AckInfo(BaseModel):
     """Acknowledgement metadata referencing the message being acknowledged."""
-    acked_message_id: UUID
+    acked_message_id: UUID = Field(..., description="UUID of the message being acknowledged.")
 
 
 class ChunkInfo(BaseModel):
     """Chunked-transfer metadata for large payloads split across multiple messages."""
-    chunk_index: int
-    total_chunks: int
-    transfer_id: UUID
+    chunk_index: int = Field(..., ge=0, description="Zero-based index of this chunk.")
+    total_chunks: int = Field(..., ge=1, description="Total number of chunks in the transfer.")
+    transfer_id: UUID = Field(..., description="Unique identifier for this chunked transfer.")
 
 
 # ── DISCRIMINATED UNION ───────────────────────────────────────────────
@@ -281,5 +281,5 @@ class TPCPEnvelope(BaseModel):
     header: MessageHeader
     payload: Payload
     signature: Optional[str] = Field(default=None, description="Cryptographic signature of the payload.")
-    ack_info: Optional[AckInfo] = None
-    chunk_info: Optional[ChunkInfo] = None
+    ack_info: Optional[AckInfo] = Field(default=None, description="Acknowledgement metadata; present when intent is ACK or NACK.")
+    chunk_info: Optional[ChunkInfo] = Field(default=None, description="Chunked transfer metadata; present when this envelope is a chunk of a larger payload.")
