@@ -20,11 +20,14 @@ async def _build_server(url: str):
     server = OPCUAServer()
     await server.init()
     server.set_endpoint(url)
-    # Disable signed/encrypted security so anonymous clients can write without
-    # a certificate. Without this the server advertises secure endpoints it
-    # cannot serve and rejects writes from anonymous clients with
-    # BadUserAccessDenied.
+    # Restrict to NoSecurity-only so the client doesn't attempt cert-based
+    # handshakes that can't work without a certificate.
     server.set_security_policy([ua.SecurityPolicyType.NoSecurity])
+    # Disable the role-based permission ruleset for this test server so that
+    # anonymous clients (UserRole.User) are not blocked by SimpleRoleRuleset
+    # before the write reaches the address-space node-level access check.
+    # SecurityPolicyNone.permissions = None skips check_validity entirely.
+    server._permission_ruleset = None
     uri = "urn:tpcp:test"
     idx = await server.register_namespace(uri)
     objects = server.nodes.objects
