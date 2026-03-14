@@ -27,10 +27,13 @@ export enum Intent {
   STATE_SYNC_VECTOR = "State_Sync_Vector",
   MEDIA_SHARE = "Media_Share",
   CRITIQUE = "Critique",
-  TERMINATE = "Terminate"
+  TERMINATE = "Terminate",
+  ACK = "ACK",
+  NACK = "NACK",
+  BROADCAST = "Broadcast",
 }
 
-export const PROTOCOL_VERSION = "0.3.0";
+export const PROTOCOL_VERSION = "0.4.0";
 
 export const AgentIdentitySchema = z.object({
   agent_id: z.string().uuid(),
@@ -138,6 +141,38 @@ export const BinaryPayloadSchema = z.object({
 });
 export type BinaryPayload = z.infer<typeof BinaryPayloadSchema>;
 
+// ── TELEMETRY PAYLOAD ─────────────────────────────────────────────────
+
+export const TelemetryReadingSchema = z.object({
+  value: z.number(),
+  timestamp_ms: z.number().int(),
+  quality: z.enum(["Good", "Bad", "Uncertain"]).optional(),
+});
+export type TelemetryReading = z.infer<typeof TelemetryReadingSchema>;
+
+export const TelemetryPayloadSchema = z.object({
+  payload_type: z.literal("telemetry"),
+  sensor_id: z.string(),
+  unit: z.string(),
+  readings: z.array(TelemetryReadingSchema),
+  source_protocol: z.enum(["opcua", "modbus", "canbus", "mqtt"]),
+});
+export type TelemetryPayload = z.infer<typeof TelemetryPayloadSchema>;
+
+// ── ACK / CHUNK INFO ──────────────────────────────────────────────────
+
+export const AckInfoSchema = z.object({
+  acked_message_id: z.string().uuid(),
+});
+export type AckInfo = z.infer<typeof AckInfoSchema>;
+
+export const ChunkInfoSchema = z.object({
+  chunk_index: z.number().int().min(0),
+  total_chunks: z.number().int().min(1),
+  transfer_id: z.string().uuid(),
+});
+export type ChunkInfo = z.infer<typeof ChunkInfoSchema>;
+
 // ── DISCRIMINATED UNION ───────────────────────────────────────────────
 
 export const PayloadSchema = z.discriminatedUnion("payload_type", [
@@ -148,6 +183,7 @@ export const PayloadSchema = z.discriminatedUnion("payload_type", [
   AudioPayloadSchema,
   VideoPayloadSchema,
   BinaryPayloadSchema,
+  TelemetryPayloadSchema,
 ]);
 
 export type PayloadType = z.infer<typeof PayloadSchema>;
@@ -155,6 +191,8 @@ export type PayloadType = z.infer<typeof PayloadSchema>;
 export const TPCPEnvelopeSchema = z.object({
   header: MessageHeaderSchema,
   payload: PayloadSchema,
-  signature: z.string().nullable().optional()
+  signature: z.string().nullable().optional(),
+  ack_info: AckInfoSchema.optional(),
+  chunk_info: ChunkInfoSchema.optional(),
 });
 export type TPCPEnvelope = z.infer<typeof TPCPEnvelopeSchema>;
