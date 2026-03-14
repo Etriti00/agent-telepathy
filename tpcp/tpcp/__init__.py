@@ -21,6 +21,8 @@ TPCP (Telepathy Communication Protocol) SDK Core
 A framework-agnostic, LLM-agnostic communication standard for autonomous agents.
 """
 
+__version__ = "0.3.0"
+
 from tpcp.core.node import TPCPNode
 from tpcp.schemas.envelope import (
     AgentIdentity,
@@ -36,6 +38,7 @@ from tpcp.security.crypto import AgentIdentityManager
 from tpcp.adapters.base import BaseFrameworkAdapter
 
 __all__ = [
+    "__version__",
     "TPCPNode",
     "AgentIdentity",
     "Intent",
