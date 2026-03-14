@@ -51,6 +51,7 @@ from tpcp.schemas.envelope import (
 from tpcp.memory.crdt import LWWMap
 from tpcp.memory.vector import VectorBank
 from tpcp.security.crypto import AgentIdentityManager
+from tpcp.security.acl import ACLPolicy
 from tpcp.core.queue import MessageQueue
 
 logger = logging.getLogger(__name__)
@@ -81,7 +82,8 @@ class TPCPNode:
         key_path: Optional[Path] = None,
         auto_save_key: bool = False,
         ssl_context: Optional[ssl.SSLContext] = None,
-        auto_ack: bool = False
+        auto_ack: bool = False,
+        acl_policy: Optional[ACLPolicy] = None
     ):
         self.identity = identity
         self.host = host
@@ -89,6 +91,7 @@ class TPCPNode:
         self.adns_url = adns_url
         self.ssl_context = ssl_context
         self.auto_ack = auto_ack
+        self.acl_policy = acl_policy
         self._adns_ws: Optional[websockets.client.WebSocketClientProtocol] = None
         self._adns_registered = False
         
@@ -351,7 +354,20 @@ class TPCPNode:
                     logger.warning(f"INVALID SIGNATURE from {sender_id}. Dropping packet.")
                     return
             # ────────────────────────────────────────────────────────────────
-            
+
+            # ── ACL CHECK ────────────────────────────────────────────────────
+            if self.acl_policy is not None:
+                if not self.acl_policy.is_allowed(envelope.header.sender_id, envelope.header.intent):
+                    logger.warning(
+                        f"ACL DENIED: {envelope.header.sender_id} attempted to send "
+                        f"{envelope.header.intent} but is not permitted."
+                    )
+                    if self.auto_ack:
+                        nack = self._create_nack_envelope(envelope, "ACL denied")
+                        await self._dispatch_envelope(envelope.header.sender_id, nack)
+                    return
+            # ────────────────────────────────────────────────────────────────
+
             # Dispatch to handler
             handler = self.handlers.get(envelope.header.intent)
             if handler:
