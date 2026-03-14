@@ -53,3 +53,12 @@ TPCP operates under a dual-license model (AGPLv3 for open-source, and a Commerci
 To ensure we can maintain this dual-license ecosystem, by submitting a Pull Request, you agree to grant the TPCP project maintainers a perpetual, worldwide, non-exclusive, transferable, royalty-free, irrevocable license to use, modify, and distribute your contributions under both the AGPLv3 license and any commercial licenses offered by the project. You retain the copyright to your own work, but you grant us the right to include it in commercial offerings.
 
 If your contribution is for your own proprietary enterprise integration, please review [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md) first.
+
+## Release Process
+
+1. Ensure all tests pass: `cd tpcp && pytest && cd ../tpcp-ts && npm test`
+2. Update version in `tpcp/pyproject.toml` and `tpcp-ts/package.json`
+3. Update `CHANGELOG.md`
+4. Commit: `git commit -m "chore: release vX.Y.Z"`
+5. Tag: `git tag vX.Y.Z && git push origin vX.Y.Z`
+6. GitHub Actions will automatically publish to PyPI and npm
