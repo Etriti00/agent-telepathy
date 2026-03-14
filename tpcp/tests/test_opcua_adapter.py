@@ -15,19 +15,30 @@ from tpcp.schemas.envelope import TelemetryPayload, BinaryPayload
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+try:
+    from asyncua.crypto.permission_rules import PermissionRuleset as _PermissionRuleset
+
+    class _AllowAll(_PermissionRuleset):
+        """Permissive ruleset for test servers — allows all operations."""
+        def check_validity(self, user, action_type, body):
+            return True
+except ImportError:
+    _AllowAll = None  # type: ignore
+
+
 async def _build_server(url: str):
     """Spin up a minimal asyncua server, add one numeric and one bytes node."""
     server = OPCUAServer()
     await server.init()
     server.set_endpoint(url)
-    # Restrict to NoSecurity-only so the client doesn't attempt cert-based
-    # handshakes that can't work without a certificate.
-    server.set_security_policy([ua.SecurityPolicyType.NoSecurity])
-    # Disable the role-based permission ruleset for this test server so that
-    # anonymous clients (UserRole.User) are not blocked by SimpleRoleRuleset
-    # before the write reaches the address-space node-level access check.
-    # SecurityPolicyNone.permissions = None skips check_validity entirely.
-    server._permission_ruleset = None
+    # Use the public set_security_policy API with a permissive ruleset so that
+    # anonymous clients can perform writes without being blocked by
+    # SimpleRoleRuleset (the asyncua default which denies all anonymous writes).
+    permission_ruleset = _AllowAll() if _AllowAll is not None else None
+    server.set_security_policy(
+        [ua.SecurityPolicyType.NoSecurity],
+        permission_ruleset=permission_ruleset,
+    )
     uri = "urn:tpcp:test"
     idx = await server.register_namespace(uri)
     objects = server.nodes.objects
