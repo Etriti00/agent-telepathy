@@ -1,15 +1,20 @@
 """
-Tests for ModbusAdapter using the pymodbus ModbusSimulatorServer.
+Tests for ModbusAdapter using a pymodbus TCP server with in-memory datastore.
 
-The pymodbus library ships a simulator that runs entirely in-process over a
-loopback TCP socket, so no external PLC hardware is required.
+Uses StartAsyncTcpServer + ModbusDeviceContext so no external PLC hardware
+or aiohttp (ModbusSimulatorServer dependency) is required.
 """
 import asyncio
 import pytest
 
 pytest.importorskip("pymodbus", reason="pymodbus not installed; skip Modbus tests")
 
-from pymodbus.server import ModbusSimulatorServer  # type: ignore
+from pymodbus.server import StartAsyncTcpServer  # type: ignore
+from pymodbus.datastore import (  # type: ignore
+    ModbusSequentialDataBlock,
+    ModbusDeviceContext,
+    ModbusServerContext,
+)
 from tpcp.adapters.modbus_adapter import ModbusAdapter
 from tpcp.schemas.envelope import TelemetryPayload
 
@@ -18,19 +23,24 @@ from tpcp.schemas.envelope import TelemetryPayload
 
 @pytest.fixture
 async def modbus_server():
-    """Start a pymodbus simulator on a random port and yield (host, port)."""
-    server = ModbusSimulatorServer(
-        modbus_server="127.0.0.1",
-        modbus_port=50200,
-        http_host="127.0.0.1",
-        http_port=50201,
+    """Start an in-process pymodbus TCP server and yield (host, port)."""
+    store = ModbusDeviceContext(
+        di=ModbusSequentialDataBlock(0, [0] * 100),
+        co=ModbusSequentialDataBlock(0, [0] * 100),
+        hr=ModbusSequentialDataBlock(0, [17] * 100),
+        ir=ModbusSequentialDataBlock(0, [0] * 100),
     )
-    task = asyncio.create_task(server.run_forever(only_start=True))
-    await asyncio.sleep(0.3)   # give server time to bind
+    context = ModbusServerContext(devices=store, single=True)
+    task = asyncio.create_task(
+        StartAsyncTcpServer(context=context, address=("127.0.0.1", 50200))
+    )
+    await asyncio.sleep(0.3)  # give server time to bind
     yield ("127.0.0.1", 50200)
-    server.stop()
     task.cancel()
-    await asyncio.sleep(0.1)
+    try:
+        await task
+    except (asyncio.CancelledError, Exception):
+        pass
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
