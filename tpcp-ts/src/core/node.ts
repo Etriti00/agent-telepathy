@@ -115,7 +115,10 @@ class VectorBank {
     const results: { payloadId: string; similarity: number; rawText?: string }[] = [];
 
     for (const [pid, entry] of this._embeddings) {
-      if (entry.norm === 0 || entry.vector.length !== queryVector.length) continue;
+      if (entry.norm === 0) continue;
+      if (entry.vector.length !== queryVector.length) {
+        throw new Error(`Dimension mismatch: query is ${queryVector.length}d, stored vector '${pid}' is ${entry.vector.length}d.`);
+      }
       const dot = queryVector.reduce((sum, a, i) => sum + a * entry.vector[i], 0);
       const similarity = dot / (queryNorm * entry.norm);
       results.push({ payloadId: pid, similarity, rawText: entry.rawText });
@@ -338,14 +341,27 @@ export class TPCPNode extends EventEmitter {
 
   private _handleHandshake(envelope: TPCPEnvelope): void {
     console.log(`Handshake received from ${envelope.header.sender_id}`);
-    
+
     // Auto-register from payload
     const payload = envelope.payload as any;
     if (payload && payload.content) {
       try {
         const senderIdentity = JSON.parse(payload.content) as AgentIdentity;
+
+        // Security: verify handshake signature before auto-registering the peer
+        if (!envelope.signature) {
+          console.warn(`Handshake dropped: unsigned packet from ${envelope.header.sender_id}`);
+          return;
+        }
+        if (!AgentIdentityManager.verifySignature(senderIdentity.public_key, envelope.signature, payload)) {
+          console.warn(`Handshake dropped: invalid signature from ${envelope.header.sender_id}`);
+          return;
+        }
+
         this.peerRegistry.set(senderIdentity.agent_id, {
           identity: senderIdentity,
+          // TODO: address must be resolved via A-DNS relay or direct connection context;
+          // the actual remote address is not available here without websocket refactoring.
           address: `ws://unknown`
         });
         console.log(`Auto-registered peer: ${senderIdentity.framework} (${senderIdentity.agent_id})`);
@@ -357,7 +373,7 @@ export class TPCPNode extends EventEmitter {
 
   private _handleStateSync(payload: CRDTSyncPayload): void {
     if (payload.crdt_type === "LWW-Map") {
-      this.sharedMemory.merge(payload.state as Record<string, { value: any; timestamp: number; writer_id: string }>);
+      this.sharedMemory.merge(payload.state as unknown as Record<string, { value: any; timestamp: number; writer_id: string }>);
       this.emit("onStateSync", this.sharedMemory.toDict());
     }
   }
