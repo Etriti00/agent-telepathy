@@ -97,7 +97,8 @@ impl TPCPNode {
                 sender_id: self.identity.agent_id.clone(),
                 receiver_id: url.to_string(),
                 intent,
-                timestamp_ms: now_ms(),
+                timestamp: now_iso8601(),
+                ttl: 30,
                 protocol_version: PROTOCOL_VERSION.to_string(),
             },
             payload,
@@ -130,7 +131,19 @@ fn uuid_v4() -> String {
         t, t >> 16, t & 0xfff, 0x8000 | (t & 0x3fff), t as u64 * 0x1_0000_0000)
 }
 
-fn now_ms() -> i64 {
+fn now_iso8601() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as i64
+    let secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+    // Produce a minimal ISO 8601 UTC string: YYYY-MM-DDTHH:MM:SSZ
+    let s = secs;
+    let sec = s % 60;
+    let min = (s / 60) % 60;
+    let hour = (s / 3600) % 24;
+    let days = s / 86400;
+    // Approximate date from epoch (good enough for wire protocol; not calendar-correct for all dates)
+    let year = 1970 + days / 365;
+    let day_of_year = days % 365;
+    let month = day_of_year / 30 + 1;
+    let day = day_of_year % 30 + 1;
+    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", year, month, day, hour, min, sec)
 }

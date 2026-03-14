@@ -36,17 +36,18 @@ async def _build_server(url: str):
 @pytest.mark.asyncio
 async def test_pack_thought_telemetry():
     """pack_thought converts a numeric DataChange to a TelemetryPayload."""
+    from uuid import uuid4
     url = "opc.tcp://127.0.0.1:4841/tpcp-test"
     server, idx = await _build_server(url)
     async with server:
         adapter = OPCUAAdapter(server_url=url)
-        result_envelopes = []
-
-        # Directly call pack_thought with a simulated DataChange value
-        envelope = await adapter.pack_thought(
-            node_id=f"ns={idx};s=Temperature",
-            value=98.6,
-            target_id=None,
+        envelope = adapter.pack_thought(
+            target_id=uuid4(),
+            raw_output={
+                "node_id": f"ns={idx};s=Temperature",
+                "value": 98.6,
+                "timestamp_ms": 1000,
+            },
         )
         assert envelope is not None
         assert isinstance(envelope.payload, TelemetryPayload)
@@ -59,14 +60,18 @@ async def test_pack_thought_telemetry():
 @pytest.mark.asyncio
 async def test_pack_thought_binary():
     """pack_thought converts a bytes DataChange value to a BinaryPayload."""
+    from uuid import uuid4
     url = "opc.tcp://127.0.0.1:4842/tpcp-test"
     server, idx = await _build_server(url)
     async with server:
         adapter = OPCUAAdapter(server_url=url)
-        envelope = await adapter.pack_thought(
-            node_id=f"ns={idx};s=RawFrame",
-            value=b"\xDE\xAD\xBE\xEF",
-            target_id=None,
+        envelope = adapter.pack_thought(
+            target_id=uuid4(),
+            raw_output={
+                "node_id": f"ns={idx};s=RawFrame",
+                "value": b"\xDE\xAD\xBE\xEF",
+                "timestamp_ms": 1000,
+            },
         )
         assert envelope is not None
         assert isinstance(envelope.payload, BinaryPayload)

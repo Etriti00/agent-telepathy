@@ -12,8 +12,8 @@ class SchemaTest {
     void envelopeRoundTrip() throws Exception {
         TextPayload text = new TextPayload("hello TPCP");
         MessageHeader header = new MessageHeader(
-            "msg-001", "sender-1", "receiver-1",
-            Intent.HANDSHAKE, 1700000000000L, "0.4.0"
+            "msg-001", "2026-03-14T00:00:00Z", "sender-1", "receiver-1",
+            Intent.HANDSHAKE, 30, "0.4.0"
         );
         TPCPEnvelope original = new TPCPEnvelope(header, MAPPER.valueToTree(text));
 
@@ -29,6 +29,6 @@ class SchemaTest {
     @Test
     void intentSerializesCorrectly() throws Exception {
         String json = MAPPER.writeValueAsString(Intent.TASK_REQUEST);
-        assertEquals("\"TaskRequest\"", json);
+        assertEquals("\"Task_Request\"", json);
     }
 }

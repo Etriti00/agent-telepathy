@@ -40,7 +40,7 @@ from uuid import UUID
 
 from tpcp.adapters.base import BaseFrameworkAdapter
 from tpcp.schemas.envelope import (
-    AgentIdentity, Intent, TelemetryPayload, TelemetryReading, TextPayload, TPCPEnvelope
+    AgentIdentity, Intent, TelemetryPayload, TelemetryReading, TPCPEnvelope
 )
 
 try:
@@ -72,12 +72,14 @@ class CANbusAdapter(BaseFrameworkAdapter):
 
     def __init__(
         self,
-        agent_identity: AgentIdentity,
         interface: str,
         channel: str,
         bitrate: int = 500000,
+        agent_identity: Optional[AgentIdentity] = None,
         identity_manager=None,
     ) -> None:
+        if agent_identity is None:
+            agent_identity = AgentIdentity(framework="CANbusAdapter", public_key="")
         super().__init__(agent_identity, identity_manager)
         if not CAN_AVAILABLE:
             raise ImportError(

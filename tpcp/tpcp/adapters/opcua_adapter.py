@@ -36,7 +36,7 @@ from uuid import UUID
 from tpcp.adapters.base import BaseFrameworkAdapter
 from tpcp.schemas.envelope import (
     AgentIdentity, BinaryPayload, Intent, TelemetryPayload, TelemetryReading,
-    TextPayload, TPCPEnvelope,
+    TPCPEnvelope,
 )
 
 # Threshold above which a bytes/bytearray OPC-UA value is returned as BinaryPayload.
@@ -72,11 +72,13 @@ class OPCUAAdapter(BaseFrameworkAdapter):
 
     def __init__(
         self,
-        agent_identity: AgentIdentity,
         server_url: str,
+        agent_identity: Optional[AgentIdentity] = None,
         subscription_interval_ms: int = 500,
         identity_manager=None,
     ) -> None:
+        if agent_identity is None:
+            agent_identity = AgentIdentity(framework="OPCUAAdapter", public_key="")
         super().__init__(agent_identity, identity_manager)
         if not OPCUA_AVAILABLE:
             raise ImportError(

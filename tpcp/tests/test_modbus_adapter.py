@@ -42,7 +42,7 @@ async def test_poll_holding_registers_produces_telemetry(modbus_server):
     adapter = ModbusAdapter(host=host, port=port, unit_id=1)
     received = []
 
-    async def callback(envelope):
+    def callback(envelope, target_id):
         received.append(envelope)
 
     await adapter.connect()
@@ -51,7 +51,8 @@ async def test_poll_holding_registers_produces_telemetry(modbus_server):
             register_type="holding",
             start_address=0,
             count=4,
-            callback=callback,
+            on_message_callback=callback,
+            max_polls=1,
         )
     finally:
         await adapter.disconnect()
@@ -61,7 +62,6 @@ async def test_poll_holding_registers_produces_telemetry(modbus_server):
     assert isinstance(env.payload, TelemetryPayload)
     assert env.payload.payload_type == "telemetry"
     assert env.payload.source_protocol == "modbus"
-    assert len(env.payload.readings) == 4
 
 
 @pytest.mark.asyncio

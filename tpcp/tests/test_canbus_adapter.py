@@ -18,14 +18,19 @@ from tpcp.schemas.envelope import TelemetryPayload
 
 @pytest.mark.asyncio
 async def test_pack_thought_produces_telemetry():
-    """pack_thought converts a CAN frame to a TelemetryPayload."""
+    """pack_thought converts a CAN frame dict to a TelemetryPayload."""
+    from uuid import uuid4
     adapter = CANbusAdapter(interface="virtual", channel="test_ch1", bitrate=500000)
-    frame = can.Message(
-        arbitration_id=0x123,
-        data=[0x01, 0x02, 0x03, 0x04],
-        is_extended_id=False,
+    envelope = adapter.pack_thought(
+        target_id=uuid4(),
+        raw_output={
+            "arbitration_id": 0x123,
+            "data": [0x01, 0x02, 0x03, 0x04],
+            "dlc": 4,
+            "timestamp": 0.0,
+            "is_extended_id": False,
+        },
     )
-    envelope = await adapter.pack_thought(frame=frame, target_id=None)
     assert envelope is not None
     assert isinstance(envelope.payload, TelemetryPayload)
     assert envelope.payload.payload_type == "telemetry"
@@ -40,7 +45,7 @@ async def test_start_and_stop_listening():
     adapter = CANbusAdapter(interface="virtual", channel="test_ch2", bitrate=500000)
     received = []
 
-    async def callback(envelope):
+    def callback(envelope, target_id):
         received.append(envelope)
 
     await adapter.start_listening(can_ids=[0x100, 0x200], callback=callback)
@@ -69,7 +74,7 @@ async def test_can_id_filter():
     adapter = CANbusAdapter(interface="virtual", channel="test_ch3", bitrate=500000)
     received = []
 
-    async def callback(envelope):
+    def callback(envelope, target_id):
         received.append(envelope)
 
     await adapter.start_listening(can_ids=[0x200], callback=callback)  # only 0x200
@@ -89,6 +94,6 @@ async def test_can_id_filter():
 async def test_stop_listening_is_idempotent():
     """Calling stop_listening twice must not raise."""
     adapter = CANbusAdapter(interface="virtual", channel="test_ch4", bitrate=500000)
-    await adapter.start_listening(can_ids=[], callback=lambda e: None)
+    await adapter.start_listening(can_ids=[], callback=lambda e, t: None)
     adapter.stop_listening()
     adapter.stop_listening()  # second call must be safe

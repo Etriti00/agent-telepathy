@@ -19,7 +19,7 @@ class IdentityTest {
         JsonNode payload = MAPPER.valueToTree(new TextPayload("sign me"));
         String sig = mgr.sign(payload);
 
-        assertTrue(IdentityManager.verify(identity.publicKeyB64, payload, sig),
+        assertTrue(IdentityManager.verify(identity.publicKey, payload, sig),
             "valid signature should verify");
     }
 
@@ -32,7 +32,7 @@ class IdentityTest {
         String sig = mgr.sign(payload);
 
         JsonNode tampered = MAPPER.valueToTree(new TextPayload("tampered"));
-        assertFalse(IdentityManager.verify(identity.publicKeyB64, tampered, sig),
+        assertFalse(IdentityManager.verify(identity.publicKey, tampered, sig),
             "tampered payload should fail verification");
     }
 
@@ -40,7 +40,7 @@ class IdentityTest {
     void identityHasNonEmptyPublicKey() {
         IdentityManager mgr = new IdentityManager();
         AgentIdentity identity = mgr.createIdentity("my-agent");
-        assertFalse(identity.publicKeyB64.isEmpty());
-        assertEquals("my-agent", identity.agentType);
+        assertFalse(identity.publicKey.isEmpty());
+        assertEquals("my-agent", identity.framework);
     }
 }

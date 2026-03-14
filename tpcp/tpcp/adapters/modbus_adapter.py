@@ -34,7 +34,7 @@ from uuid import UUID
 
 from tpcp.adapters.base import BaseFrameworkAdapter
 from tpcp.schemas.envelope import (
-    AgentIdentity, Intent, TelemetryPayload, TelemetryReading, TextPayload, TPCPEnvelope
+    AgentIdentity, Intent, TelemetryPayload, TelemetryReading, TPCPEnvelope
 )
 
 try:
@@ -71,12 +71,14 @@ class ModbusAdapter(BaseFrameworkAdapter):
 
     def __init__(
         self,
-        agent_identity: AgentIdentity,
         host: str,
         port: int = 502,
         unit_id: int = 1,
+        agent_identity: Optional[AgentIdentity] = None,
         identity_manager=None,
     ) -> None:
+        if agent_identity is None:
+            agent_identity = AgentIdentity(framework="ModbusAdapter", public_key="")
         super().__init__(agent_identity, identity_manager)
         if not MODBUS_AVAILABLE:
             raise ImportError(
@@ -227,14 +229,29 @@ class ModbusAdapter(BaseFrameworkAdapter):
         self._retry_queue = remaining
         return retried
 
+    async def connect(self) -> None:
+        """Open a Modbus TCP connection to the device."""
+        self._client = AsyncModbusTcpClient(self.host, port=self.port)
+        await self._client.connect()
+        logger.info(f"[ModbusAdapter] Connected to {self.host}:{self.port} unit={self.unit_id}")
+
+    async def disconnect(self) -> None:
+        """Close the Modbus TCP connection."""
+        if self._client is not None:
+            self._client.close()
+            self._client = None
+            logger.info("[ModbusAdapter] Disconnected")
+
     async def poll_registers(
         self,
         register_type: str,
         start_address: int,
         count: int,
-        interval_seconds: float,
-        on_message_callback: Callable[[TPCPEnvelope, UUID], None],
+        interval_seconds: float = 1.0,
+        on_message_callback: Optional[Callable[[TPCPEnvelope, UUID], None]] = None,
+        callback: Optional[Callable[[TPCPEnvelope], None]] = None,
         target_id: Optional[UUID] = None,
+        max_polls: Optional[int] = None,
     ) -> None:
         """
         Connect to the Modbus device and poll registers on a fixed interval.
@@ -243,19 +260,29 @@ class ModbusAdapter(BaseFrameworkAdapter):
             register_type: "coil", "discrete", "input", or "holding"
             start_address: Starting register address.
             count: Number of registers to read.
-            interval_seconds: Polling interval.
+            interval_seconds: Polling interval in seconds (default 1.0).
             on_message_callback: Called with (envelope, target_id) per poll.
+            callback: Alias for on_message_callback accepting (envelope,) only.
             target_id: Receiver UUID (defaults to BROADCAST_UUID).
+            max_polls: Stop after this many poll cycles (None = run forever).
         """
         import time
         from tpcp.core.node import BROADCAST_UUID
         effective_target = target_id or BROADCAST_UUID
 
-        self._client = AsyncModbusTcpClient(self.host, port=self.port)
-        await self._client.connect()
-        logger.info(f"[ModbusAdapter] Connected to {self.host}:{self.port} unit={self.unit_id}")
+        # Support both callback styles; on_message_callback takes priority.
+        _cb = on_message_callback
+        if _cb is None and callback is not None:
+            def _cb(env, _tid):  # type: ignore[misc]
+                callback(env)  # type: ignore[misc]
 
-        while True:
+        if self._client is None:
+            self._client = AsyncModbusTcpClient(self.host, port=self.port)
+            await self._client.connect()
+            logger.info(f"[ModbusAdapter] Connected to {self.host}:{self.port} unit={self.unit_id}")
+
+        polls = 0
+        while max_polls is None or polls < max_polls:
             try:
                 timestamp_ms = int(time.time() * 1000)
                 for offset in range(count):
@@ -293,7 +320,8 @@ class ModbusAdapter(BaseFrameworkAdapter):
                         envelope = self.pack_thought(
                             effective_target, raw_output, Intent.MEDIA_SHARE
                         )
-                        on_message_callback(envelope, effective_target)
+                        if _cb is not None:
+                            _cb(envelope, effective_target)
 
                     except Exception as exc:
                         logger.warning(
@@ -303,4 +331,6 @@ class ModbusAdapter(BaseFrameworkAdapter):
             except Exception as exc:
                 logger.error(f"[ModbusAdapter] Poll cycle failed: {exc}")
 
-            await asyncio.sleep(interval_seconds)
+            polls += 1
+            if max_polls is None or polls < max_polls:
+                await asyncio.sleep(interval_seconds)
