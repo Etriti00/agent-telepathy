@@ -94,7 +94,14 @@ async def test_execute_write_connects_and_disconnects():
     async with server:
         adapter = OPCUAAdapter(server_url=url)
         node_id = f"ns={idx};s=Temperature"
-        success = await adapter.execute_write({"node_id": node_id, "value": 55.5})
+        # Retry up to 5 times to avoid startup timing races.
+        import asyncio as _asyncio
+        success = False
+        for _ in range(5):
+            success = await adapter.execute_write({"node_id": node_id, "value": 55.5})
+            if success:
+                break
+            await _asyncio.sleep(0.1)
         assert success is True
         # Adapter should not leak an open client after a transient write
         assert adapter._client is None

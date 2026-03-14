@@ -82,5 +82,9 @@ class RelayTPCPNode(TPCPNode):
             f"[RelayTPCPNode] Starting in relay-only mode via {self.adns_url} "
             f"(no local server port)"
         )
+        # Initialize shared memory and mark the node as running before
+        # entering the relay loop — mirrors what the base start_listening does.
+        await self.shared_memory.connect()
+        self._running = True
         # Only connect to the relay — skip the server completely
         await self._connect_to_adns()

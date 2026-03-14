@@ -83,19 +83,6 @@ warn_unused_ignores = false
 module = ["websockets.*"]
 ignore_errors = true
 
-[[tool.mypy.overrides]]
-module = ["tpcp.core.node", "tpcp.relay.server", "tpcp.relay.webhook"]
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = [
-    "tpcp.adapters.mqtt_adapter",
-    "tpcp.adapters.homeassistant_adapter",
-    "tpcp.adapters.modbus_adapter",
-    "tpcp.adapters.canbus_adapter",
-    "tpcp.adapters.ros2_adapter",
-]
-ignore_errors = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

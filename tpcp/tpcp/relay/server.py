@@ -151,6 +151,7 @@ class ADNSRelayServer:
                     if target_id == BROADCAST_ID:
                         # Fan-out to all registered peers except the sender
                         fanout_count = 0
+                        stale_agents = []
                         for agent_id, info in list(self.registry.items()):
                             if agent_id != sender_id:
                                 try:
@@ -158,6 +159,9 @@ class ADNSRelayServer:
                                     fanout_count += 1
                                 except Exception as exc:
                                     logger.warning(f"[Relay] Broadcast to {agent_id} failed: {exc}")
+                                    stale_agents.append(agent_id)
+                        for agent_id in stale_agents:
+                            del self.registry[agent_id]
                         logger.info(f"[Relay] Broadcast from {sender_id}: fanned out to {fanout_count} peers")
                     elif target_id and target_id in self.registry and target_id != sender_id:
                         logger.info(f"Routing {intent} from {sender_id} to {target_id} (TTL={ttl-1})")

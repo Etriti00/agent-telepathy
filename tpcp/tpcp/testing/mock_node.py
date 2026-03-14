@@ -1,8 +1,8 @@
 """
 MockTPCPNode — in-process TPCP node for unit testing.
 
-Does not open any network sockets. Messages are delivered directly via
-in-process queues. Use MockTPCPNode.connect_pair() to link two mock nodes.
+Does not open any network sockets. Messages are delivered by direct
+in-process method calls. Use MockTPCPNode.connect_pair() to link two mock nodes.
 """
 from __future__ import annotations
 import asyncio
@@ -26,7 +26,6 @@ class MockTPCPNode:
 
         await alice.send_message(bob.agent_id, Intent.TASK_REQUEST,
                                  TextPayload(content="hello"))
-        await asyncio.sleep(0)   # yield to let handlers run
         assert len(received) == 1
     """
 
@@ -67,12 +66,12 @@ class MockTPCPNode:
             intent=intent,
         )
         envelope = TPCPEnvelope(header=header, payload=payload)
-        self.sent.append(envelope)
 
         target = self._peers.get(target_id)
         if target is None:
             raise ValueError(f"No peer with id {target_id}")
 
+        self.sent.append(envelope)
         await target._receive(envelope)
         return envelope
 

@@ -80,6 +80,12 @@ class ModbusAdapter(BaseFrameworkAdapter):
     ) -> None:
         if agent_identity is None:
             agent_identity = AgentIdentity(framework="ModbusAdapter", public_key="")
+            if identity_manager is not None:
+                logger.warning(
+                    "[ModbusAdapter] identity_manager provided but agent_identity was not — "
+                    "envelopes will be signed but public_key is empty, so receivers cannot "
+                    "verify signatures. Pass agent_identity with the correct public_key."
+                )
         super().__init__(agent_identity, identity_manager)
         if not MODBUS_AVAILABLE:
             raise ImportError(
@@ -333,7 +339,7 @@ class ModbusAdapter(BaseFrameworkAdapter):
                             "timestamp_ms": timestamp_ms,
                         }
                         envelope = self.pack_thought(
-                            effective_target, raw_output, Intent.MEDIA_SHARE
+                            effective_target, raw_output, Intent.STATE_SYNC
                         )
                         if _cb is not None:
                             result = _cb(envelope, effective_target)
