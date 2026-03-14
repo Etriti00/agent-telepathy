@@ -171,7 +171,11 @@ class OPCUAAdapter(BaseFrameworkAdapter):
         """
         Write a value to an OPC-UA node.
 
-        Connects to the server if ``self._client`` is not already connected.
+        If ``start_subscription()`` has already been called the existing
+        ``self._client`` connection is reused.  Otherwise a short-lived
+        connection is opened for the write and disconnected in a ``finally``
+        block, ensuring no connection leak.
+
         Use after ``unpack_request()``::
 
             cmd = adapter.unpack_request(envelope)
@@ -188,12 +192,26 @@ class OPCUAAdapter(BaseFrameworkAdapter):
         if not write_cmd.get("node_id"):
             logger.error("[OPCUAAdapter] execute_write called with missing node_id")
             return False
+
+        # Reuse an existing subscription client if available.
+        if self._client is not None:
+            try:
+                node = self._client.get_node(write_cmd["node_id"])
+                await node.write_value(write_cmd["value"])
+                logger.debug(
+                    f"[OPCUAAdapter] Wrote {write_cmd['value']!r} to {write_cmd['node_id']}"
+                )
+                return True
+            except Exception as exc:
+                logger.error(f"[OPCUAAdapter] execute_write failed: {exc}")
+                return False
+
+        # No existing connection — open a transient one and always close it.
+        client = OPCUAClient(self.server_url)
         try:
-            if self._client is None:
-                self._client = OPCUAClient(self.server_url)
-                await self._client.connect()
-                logger.info(f"[OPCUAAdapter] Connected to {self.server_url} for write")
-            node = self._client.get_node(write_cmd["node_id"])
+            await client.connect()
+            logger.info(f"[OPCUAAdapter] Transient connection to {self.server_url} for write")
+            node = client.get_node(write_cmd["node_id"])
             await node.write_value(write_cmd["value"])
             logger.debug(
                 f"[OPCUAAdapter] Wrote {write_cmd['value']!r} to {write_cmd['node_id']}"
@@ -202,6 +220,11 @@ class OPCUAAdapter(BaseFrameworkAdapter):
         except Exception as exc:
             logger.error(f"[OPCUAAdapter] execute_write failed: {exc}")
             return False
+        finally:
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
 
     async def start_subscription(
         self,
@@ -219,6 +242,15 @@ class OPCUAAdapter(BaseFrameworkAdapter):
         """
         from tpcp.core.node import BROADCAST_UUID
         effective_target = target_id or BROADCAST_UUID
+
+        # Disconnect any existing client before creating a new one to avoid
+        # leaking TCP connections on repeated calls to start_subscription().
+        if self._client is not None:
+            try:
+                await self._client.disconnect()
+            except Exception:
+                pass
+            self._client = None
 
         self._client = OPCUAClient(self.server_url)
         await self._client.connect()

@@ -191,7 +191,7 @@ class CANbusAdapter(BaseFrameworkAdapter):
         """
         from tpcp.core.node import BROADCAST_UUID
         effective_target = target_id or BROADCAST_UUID
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         self._bus = can.Bus(
             interface=self.interface, channel=self.channel, bitrate=self.bitrate
@@ -256,7 +256,11 @@ class CANbusAdapter(BaseFrameworkAdapter):
         """
         Signal the CAN reader thread to stop and close the bus.
 
-        The thread exits on its next ``recv()`` timeout (at most 1 second).
+        Sets ``_running = False`` and calls ``bus.shutdown()`` to unblock any
+        in-progress ``recv()`` call.  The bus object is kept alive until the
+        reader thread observes the flag and exits (at most 1 second), avoiding
+        an ``AttributeError`` from the thread accessing ``self._bus`` after it
+        has been set to ``None``.
         """
         self._running = False
         if self._bus is not None:
@@ -264,5 +268,9 @@ class CANbusAdapter(BaseFrameworkAdapter):
                 self._bus.shutdown()
             except Exception as exc:
                 logger.warning(f"[CANbusAdapter] Error during bus shutdown: {exc}")
+            # Join the reader thread before clearing the bus reference so the
+            # thread cannot dereference self._bus after it becomes None.
+            if self._reader_thread is not None and self._reader_thread.is_alive():
+                self._reader_thread.join(timeout=2.0)
             self._bus = None
         logger.info("[CANbusAdapter] Stopped listening")

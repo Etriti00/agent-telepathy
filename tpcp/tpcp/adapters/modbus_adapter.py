@@ -88,6 +88,7 @@ class ModbusAdapter(BaseFrameworkAdapter):
         self.unit_id = unit_id
         self._client: Optional[Any] = None
         self._retry_queue: list = []
+        self._max_retry_queue: int = 100  # prevent unbounded growth during long outages
 
     def pack_thought(
         self,
@@ -181,7 +182,10 @@ class ModbusAdapter(BaseFrameworkAdapter):
         """
         if not self._client or not self._client.connected:
             logger.error("[ModbusAdapter] Not connected — cannot write; queuing command")
-            self._retry_queue.append(write_cmd)
+            if len(self._retry_queue) < self._max_retry_queue:
+                self._retry_queue.append(write_cmd)
+            else:
+                logger.warning("[ModbusAdapter] Retry queue full — dropping write command")
             return False
         try:
             await self.drain_retry_queue()
@@ -189,7 +193,10 @@ class ModbusAdapter(BaseFrameworkAdapter):
             return True
         except Exception as exc:
             logger.error(f"[ModbusAdapter] Write failed: {exc}")
-            self._retry_queue.append(write_cmd)
+            if len(self._retry_queue) < self._max_retry_queue:
+                self._retry_queue.append(write_cmd)
+            else:
+                logger.warning("[ModbusAdapter] Retry queue full — dropping write command")
             return False
 
     async def drain_retry_queue(self) -> int:
@@ -254,14 +261,27 @@ class ModbusAdapter(BaseFrameworkAdapter):
                 for offset in range(count):
                     address = start_address + offset
                     try:
+                        read_ok = False
+                        value = 0
                         if register_type in ("coil", "discrete"):
                             result = await self._client.read_coils(address, 1, unit=self.unit_id)
-                            value = result.bits[0] if result and not result.isError() else 0
+                            if result and not result.isError():
+                                value = result.bits[0]
+                                read_ok = True
                         else:
                             result = await self._client.read_holding_registers(
                                 address, 1, unit=self.unit_id
                             )
-                            value = result.registers[0] if result and not result.isError() else 0
+                            if result and not result.isError():
+                                value = result.registers[0]
+                                read_ok = True
+
+                        if not read_ok:
+                            logger.warning(
+                                f"[ModbusAdapter] Read error {register_type}[{address}] "
+                                f"— skipping (not emitting a zero placeholder)"
+                            )
+                            continue
 
                         raw_output = {
                             "register_type": register_type,
