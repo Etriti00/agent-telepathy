@@ -17,5 +17,6 @@
 # For commercial licensing inquiries, see COMMERCIAL_LICENSE.md
 
 from .node import TPCPNode
+from .relay_client import RelayTPCPNode
 
-__all__ = ["TPCPNode"]
+__all__ = ["TPCPNode", "RelayTPCPNode"]
