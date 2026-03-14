@@ -1,0 +1,487 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://tpcp.io/schema/v0.4.0/tpcp.schema.json",
+  "title": "TPCP Envelope Schema v0.4.0",
+  "description": "JSON Schema for the Transparent Protocol for Collaborative Processes (TPCP) v0.4.0 wire format. Used by TypeScript and Java SDK code generators.",
+  "$ref": "#/$defs/TPCPEnvelope",
+  "$defs": {
+    "AgentIdentity": {
+      "type": "object",
+      "description": "Defines the cryptographic and functional identity of an agent.",
+      "required": ["agent_id", "framework", "capabilities", "public_key"],
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Unique identifier for the agent."
+        },
+        "framework": {
+          "type": "string",
+          "description": "The framework powering the agent (e.g., 'CrewAI', 'LangGraph')."
+        },
+        "capabilities": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of capabilities the agent possesses."
+        },
+        "public_key": {
+          "type": "string",
+          "description": "Base64-encoded Ed25519 public key for verifying signatures."
+        },
+        "modality": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["text"],
+          "description": "List of modalities this agent supports (e.g., ['text', 'image', 'audio', 'video'])."
+        }
+      }
+    },
+
+    "MessageHeader": {
+      "type": "object",
+      "description": "Header information for routing and metadata.",
+      "required": ["message_id", "sender_id", "receiver_id", "protocol_version", "timestamp", "intent", "ttl"],
+      "additionalProperties": false,
+      "properties": {
+        "message_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Unique identifier for this message."
+        },
+        "sender_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Agent ID of the sender."
+        },
+        "receiver_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Agent ID of the intended receiver."
+        },
+        "protocol_version": {
+          "type": "string",
+          "default": "0.4.0",
+          "description": "TPCP protocol version for compatibility checks."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 UTC timestamp of when the message was created."
+        },
+        "intent": {
+          "type": "string",
+          "enum": [
+            "Handshake",
+            "Task_Request",
+            "State_Sync",
+            "State_Sync_Vector",
+            "Media_Share",
+            "Critique",
+            "Terminate",
+            "ACK",
+            "NACK",
+            "Broadcast"
+          ],
+          "description": "The semantic intent of the message."
+        },
+        "ttl": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 30,
+          "description": "Time-to-live in hops to prevent infinite loops."
+        }
+      }
+    },
+
+    "TextPayload": {
+      "type": "object",
+      "description": "A standard text-based message payload.",
+      "required": ["payload_type", "content"],
+      "additionalProperties": false,
+      "properties": {
+        "payload_type": {
+          "type": "string",
+          "enum": ["text"]
+        },
+        "content": {
+          "type": "string",
+          "description": "The text content of the message."
+        },
+        "language": {
+          "type": "string",
+          "default": "en",
+          "description": "ISO 639-1 language code."
+        }
+      }
+    },
+
+    "VectorEmbeddingPayload": {
+      "type": "object",
+      "description": "Payload for sharing semantic state via vector embeddings.",
+      "required": ["payload_type", "model_id", "dimensions", "vector"],
+      "additionalProperties": false,
+      "properties": {
+        "payload_type": {
+          "type": "string",
+          "enum": ["vector_embedding"]
+        },
+        "model_id": {
+          "type": "string",
+          "description": "The model used to generate the embedding."
+        },
+        "dimensions": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The dimension size of the vector."
+        },
+        "vector": {
+          "type": "array",
+          "items": { "type": "number" },
+          "description": "The vector embedding."
+        },
+        "raw_text_fallback": {
+          "type": "string",
+          "nullable": true,
+          "description": "Optional original text for non-vector nodes."
+        }
+      }
+    },
+
+    "CRDTSyncPayload": {
+      "type": "object",
+      "description": "Payload for synchronizing distributed state using CRDTs.",
+      "required": ["payload_type", "crdt_type", "state", "vector_clock"],
+      "additionalProperties": false,
+      "properties": {
+        "payload_type": {
+          "type": "string",
+          "enum": ["crdt_sync"]
+        },
+        "crdt_type": {
+          "type": "string",
+          "description": "The type of CRDT (e.g., 'LWW-Map')."
+        },
+        "state": {
+          "type": "object",
+          "additionalProperties": {},
+          "description": "The merged dictionary state of the CRDT."
+        },
+        "vector_clock": {
+          "type": "object",
+          "additionalProperties": { "type": "integer" },
+          "description": "Vector clock mapping agent IDs to logical timestamps."
+        }
+      }
+    },
+
+    "ImagePayload": {
+      "type": "object",
+      "description": "Payload for sharing images between agents.",
+      "required": ["payload_type", "data_base64"],
+      "additionalProperties": false,
+      "properties": {
+        "payload_type": {
+          "type": "string",
+          "enum": ["image"]
+        },
+        "data_base64": {
+          "type": "string",
+          "description": "The image data encoded as a base64 string."
+        },
+        "mime_type": {
+          "type": "string",
+          "default": "image/png",
+          "description": "MIME type of the image (e.g., 'image/png', 'image/jpeg', 'image/webp')."
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "nullable": true,
+          "description": "Image width in pixels."
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "nullable": true,
+          "description": "Image height in pixels."
+        },
+        "source_model": {
+          "type": "string",
+          "nullable": true,
+          "description": "The model that generated or analyzed this image (e.g., 'dall-e-3', 'stable-diffusion-xl')."
+        },
+        "caption": {
+          "type": "string",
+          "nullable": true,
+          "description": "Optional text description of the image for agents that cannot process visual data."
+        }
+      }
+    },
+
+    "AudioPayload": {
+      "type": "object",
+      "description": "Payload for sharing audio between agents.",
+      "required": ["payload_type", "data_base64"],
+      "additionalProperties": false,
+      "properties": {
+        "payload_type": {
+          "type": "string",
+          "enum": ["audio"]
+        },
+        "data_base64": {
+          "type": "string",
+          "description": "The audio data encoded as a base64 string."
+        },
+        "mime_type": {
+          "type": "string",
+          "default": "audio/wav",
+          "description": "MIME type of the audio (e.g., 'audio/wav', 'audio/mp3', 'audio/ogg')."
+        },
+        "sample_rate": {
+          "type": "integer",
+          "minimum": 1,
+          "nullable": true,
+          "description": "Audio sample rate in Hz (e.g., 16000, 44100)."
+        },
+        "duration_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "nullable": true,
+          "description": "Duration of the audio in seconds."
+        },
+        "source_model": {
+          "type": "string",
+          "nullable": true,
+          "description": "The model that generated or transcribed this audio (e.g., 'whisper-1', 'elevenlabs-v2')."
+        },
+        "transcript": {
+          "type": "string",
+          "nullable": true,
+          "description": "Optional text transcript for agents that cannot process audio."
+        }
+      }
+    },
+
+    "VideoPayload": {
+      "type": "object",
+      "description": "Payload for sharing video between agents.",
+      "required": ["payload_type", "data_base64"],
+      "additionalProperties": false,
+      "properties": {
+        "payload_type": {
+          "type": "string",
+          "enum": ["video"]
+        },
+        "data_base64": {
+          "type": "string",
+          "description": "The video data encoded as a base64 string."
+        },
+        "mime_type": {
+          "type": "string",
+          "default": "video/mp4",
+          "description": "MIME type of the video (e.g., 'video/mp4', 'video/webm')."
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "nullable": true,
+          "description": "Video width in pixels."
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "nullable": true,
+          "description": "Video height in pixels."
+        },
+        "duration_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "nullable": true,
+          "description": "Duration in seconds."
+        },
+        "fps": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "nullable": true,
+          "description": "Frames per second."
+        },
+        "source_model": {
+          "type": "string",
+          "nullable": true,
+          "description": "The model that generated this video (e.g., 'sora-1', 'runway-gen3')."
+        },
+        "description": {
+          "type": "string",
+          "nullable": true,
+          "description": "Optional text description for agents that cannot process video."
+        }
+      }
+    },
+
+    "BinaryPayload": {
+      "type": "object",
+      "description": "Generic binary payload for any data type not covered by the specific payload types.",
+      "required": ["payload_type", "data_base64"],
+      "additionalProperties": false,
+      "properties": {
+        "payload_type": {
+          "type": "string",
+          "enum": ["binary"]
+        },
+        "data_base64": {
+          "type": "string",
+          "description": "The raw binary data encoded as a base64 string."
+        },
+        "mime_type": {
+          "type": "string",
+          "default": "application/octet-stream",
+          "description": "MIME type of the data (e.g., 'application/pdf', 'model/gltf+json')."
+        },
+        "filename": {
+          "type": "string",
+          "nullable": true,
+          "description": "Optional original filename for context."
+        },
+        "description": {
+          "type": "string",
+          "nullable": true,
+          "description": "Optional text description of the binary content."
+        }
+      }
+    },
+
+    "TelemetryReading": {
+      "type": "object",
+      "description": "A single sensor reading with timestamp and optional quality indicator.",
+      "required": ["value", "timestamp_ms"],
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "type": "number",
+          "description": "Sensor reading value."
+        },
+        "timestamp_ms": {
+          "type": "integer",
+          "description": "Unix epoch timestamp in milliseconds."
+        },
+        "quality": {
+          "type": "string",
+          "enum": ["Good", "Bad", "Uncertain"],
+          "description": "OPC-UA quality code."
+        }
+      }
+    },
+
+    "TelemetryPayload": {
+      "type": "object",
+      "description": "Payload for industrial/IoT telemetry data from hardware protocols.",
+      "required": ["payload_type", "sensor_id", "unit", "readings", "source_protocol"],
+      "additionalProperties": false,
+      "properties": {
+        "payload_type": {
+          "type": "string",
+          "enum": ["telemetry"]
+        },
+        "sensor_id": {
+          "type": "string",
+          "description": "Unique sensor identifier, e.g. 'opcua_ns2_i_2' or 'can_0x123'."
+        },
+        "unit": {
+          "type": "string",
+          "description": "Engineering unit, e.g. 'rpm', 'celsius', 'bar'."
+        },
+        "readings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/TelemetryReading" },
+          "description": "Batch of timestamped readings from this sensor."
+        },
+        "source_protocol": {
+          "type": "string",
+          "enum": ["opcua", "modbus", "canbus", "mqtt"],
+          "description": "Origin protocol."
+        }
+      }
+    },
+
+    "AckInfo": {
+      "type": "object",
+      "description": "Acknowledgement metadata referencing the message being acknowledged.",
+      "required": ["acked_message_id"],
+      "additionalProperties": false,
+      "properties": {
+        "acked_message_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "UUID of the message being acknowledged."
+        }
+      }
+    },
+
+    "ChunkInfo": {
+      "type": "object",
+      "description": "Chunked-transfer metadata for large payloads split across multiple messages.",
+      "required": ["chunk_index", "total_chunks", "transfer_id"],
+      "additionalProperties": false,
+      "properties": {
+        "chunk_index": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Zero-based index of this chunk."
+        },
+        "total_chunks": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Total number of chunks in the transfer."
+        },
+        "transfer_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Unique identifier for this chunked transfer."
+        }
+      }
+    },
+
+    "Payload": {
+      "description": "Discriminated union of all TPCP payload types, keyed on payload_type.",
+      "oneOf": [
+        { "$ref": "#/$defs/TextPayload" },
+        { "$ref": "#/$defs/VectorEmbeddingPayload" },
+        { "$ref": "#/$defs/CRDTSyncPayload" },
+        { "$ref": "#/$defs/ImagePayload" },
+        { "$ref": "#/$defs/AudioPayload" },
+        { "$ref": "#/$defs/VideoPayload" },
+        { "$ref": "#/$defs/BinaryPayload" },
+        { "$ref": "#/$defs/TelemetryPayload" }
+      ]
+    },
+
+    "TPCPEnvelope": {
+      "type": "object",
+      "description": "The root TPCP envelope combining header, payload, and optional cryptographic signature.",
+      "required": ["header", "payload"],
+      "additionalProperties": false,
+      "properties": {
+        "header": {
+          "$ref": "#/$defs/MessageHeader"
+        },
+        "payload": {
+          "$ref": "#/$defs/Payload"
+        },
+        "signature": {
+          "type": "string",
+          "nullable": true,
+          "description": "Base64-encoded Ed25519 signature of the payload."
+        },
+        "ack_info": {
+          "$ref": "#/$defs/AckInfo",
+          "description": "Acknowledgement metadata; present when intent is ACK or NACK."
+        },
+        "chunk_info": {
+          "$ref": "#/$defs/ChunkInfo",
+          "description": "Chunked transfer metadata; present when this envelope is a chunk of a larger payload."
+        }
+      }
+    }
+  }
+}
