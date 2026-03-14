@@ -1,5 +1,6 @@
 node_modules/
 dist/
 build_errors.txt
+test_output.txt
 *.js.map
 *.tsbuildinfo
