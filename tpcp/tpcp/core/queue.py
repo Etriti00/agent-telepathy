@@ -56,7 +56,11 @@ class MessageQueue:
         async with self._lock:
             if target_id not in self._dlq:
                 self._dlq[target_id] = deque()
-            self._dlq[target_id].appendleft(envelope)
+            q = self._dlq[target_id]
+            if len(q) >= self._max_size:
+                # Evict oldest message from the back if queue is full
+                q.pop()
+            q.appendleft(envelope)
 
     async def dequeue_one(self, target_id: UUID) -> Optional[TPCPEnvelope]:
         """Pop and return a single message from the front of the queue."""

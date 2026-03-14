@@ -30,7 +30,7 @@ export enum Intent {
   TERMINATE = "Terminate"
 }
 
-export const PROTOCOL_VERSION = "0.2.0";
+export const PROTOCOL_VERSION = "0.3.0";
 
 export const AgentIdentitySchema = z.object({
   agent_id: z.string().uuid(),

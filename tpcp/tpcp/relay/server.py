@@ -130,7 +130,6 @@ class ADNSRelayServer:
                     # Update the connection if this node reconnected
                     if self.registry[sender_id]["ws"] != websocket:
                         self.registry[sender_id]["ws"] = websocket
-                        agent_id = sender_id
                     
                     target_id = header.get("receiver_id")
                     null_id = "00000000-0000-0000-0000-000000000000"
@@ -167,9 +166,10 @@ class ADNSRelayServer:
                 del self._rate_limiters[ws_id]
             
             # Deregister from verified registry
-            if agent_id and agent_id in self.registry:
-                del self.registry[agent_id]
-                logger.info(f"Deregistered node from A-DNS: {agent_id}")
+            agents_to_remove = [aid for aid, info in self.registry.items() if info["ws"] == websocket]
+            for aid in agents_to_remove:
+                del self.registry[aid]
+                logger.info(f"Deregistered node from A-DNS (clean disconnect): {aid}")
             
             # Clean up any pending challenges
             agents_to_clean = [

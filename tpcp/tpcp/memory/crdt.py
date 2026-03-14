@@ -21,8 +21,9 @@ Last-Writer-Wins Map (LWW-Map) CRDT implementation.
 Supports in-memory operation and optional SQLite persistence for durable state across restarts.
 """
 
+import aiosqlite
+import asyncio
 import json
-import sqlite3
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
@@ -36,8 +37,9 @@ class LWWMap:
     - Associativity: merge(merge(A, B), C) == merge(A, merge(B, C))
     - Idempotence: merge(A, A) == A
     
-    Optional SQLite persistence:
+    Optional SQLite persistence using aiosqlite:
         crdt = LWWMap(node_id="agent-1", db_path=Path(".tpcp/memory.db"))
+        await crdt.connect()
     """
     
     def __init__(self, node_id: str, db_path: Optional[Path] = None):
@@ -47,49 +49,51 @@ class LWWMap:
         
         # Optional SQLite persistence
         self._db_path = db_path
-        self._conn: Optional[sqlite3.Connection] = None
-        
-        if db_path:
-            self._init_db(db_path)
-            self._hydrate_from_db()
+        self._conn: Optional[aiosqlite.Connection] = None
+        self._lock = asyncio.Lock()
 
-    def _init_db(self, db_path: Path) -> None:
-        """Initialize SQLite database for persistent CRDT state."""
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(db_path))
-        self._conn.execute("""
-            CREATE TABLE IF NOT EXISTS lww_map (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL,
-                timestamp INTEGER NOT NULL,
-                writer_id TEXT NOT NULL
-            )
-        """)
-        self._conn.commit()
+    async def connect(self) -> None:
+        """Initialize SQLite database for persistent CRDT state and hydrate."""
+        if self._db_path:
+            self._db_path.parent.mkdir(parents=True, exist_ok=True)
+            self._conn = await aiosqlite.connect(str(self._db_path))
+            async with self._lock:
+                await self._conn.execute("""
+                    CREATE TABLE IF NOT EXISTS lww_map (
+                        key TEXT PRIMARY KEY,
+                        value TEXT NOT NULL,
+                        timestamp INTEGER NOT NULL,
+                        writer_id TEXT NOT NULL
+                    )
+                """)
+                await self._conn.commit()
+            await self._hydrate_from_db()
 
-    def _hydrate_from_db(self) -> None:
+    async def _hydrate_from_db(self) -> None:
         """Load existing state from SQLite on startup."""
         if not self._conn:
             return
-        cursor = self._conn.execute("SELECT key, value, timestamp, writer_id FROM lww_map")
-        for row in cursor:
-            key, value_json, ts, writer = row
-            value = json.loads(value_json)
-            self._state[key] = (value, ts, writer)
-            self.logical_clock = max(self.logical_clock, ts)
+        async with self._lock:
+            async with self._conn.execute("SELECT key, value, timestamp, writer_id FROM lww_map") as cursor:
+                async for row in cursor:
+                    key, value_json, ts, writer = row
+                    value = json.loads(value_json)
+                    self._state[key] = (value, ts, writer)
+                    self.logical_clock = max(self.logical_clock, ts)
 
-    def _persist(self, key: str, value: Any, timestamp: int, writer_id: str) -> None:
+    async def _persist(self, key: str, value: Any, timestamp: int, writer_id: str) -> None:
         """Write-through to SQLite on mutation."""
         if not self._conn:
             return
-        value_json = json.dumps(value, default=str)
-        self._conn.execute(
-            "INSERT OR REPLACE INTO lww_map (key, value, timestamp, writer_id) VALUES (?, ?, ?, ?)",
-            (key, value_json, timestamp, writer_id)
-        )
-        self._conn.commit()
+        value_json = json.dumps(value, default=str, sort_keys=True)
+        async with self._lock:
+            await self._conn.execute(
+                "INSERT OR REPLACE INTO lww_map (key, value, timestamp, writer_id) VALUES (?, ?, ?, ?)",
+                (key, value_json, timestamp, writer_id)
+            )
+            await self._conn.commit()
 
-    def set(self, key: str, value: Any, timestamp: Optional[int] = None, writer_id: Optional[str] = None) -> None:
+    async def set(self, key: str, value: Any, timestamp: Optional[int] = None, writer_id: Optional[str] = None) -> None:
         """
         Sets a key to a value in the map.
         If a timestamp is not provided, increments the logical clock.
@@ -124,7 +128,7 @@ class LWWMap:
             updated = True
 
         if updated:
-            self._persist(key, value, timestamp, writer_id)
+            await self._persist(key, value, timestamp, writer_id)
 
     def get(self, key: str) -> Any:
         """Returns the mapped value for the given key, or None if absent."""
@@ -132,13 +136,13 @@ class LWWMap:
             return self._state[key][0]
         return None
 
-    def merge(self, other_state: Dict[str, Dict[str, Any]]) -> None:
+    async def merge(self, other_state: Dict[str, Dict[str, Any]]) -> None:
         """
         Merges a serialized CRDT state from another node.
         Format: { key: { "value": Any, "timestamp": int, "writer_id": str } }
         """
         for key, record in other_state.items():
-            self.set(
+            await self.set(
                 key=key,
                 value=record["value"],
                 timestamp=record["timestamp"],
@@ -156,8 +160,8 @@ class LWWMap:
             for key, (val, ts, writer) in self._state.items()
         }
 
-    def close(self) -> None:
+    async def close(self) -> None:
         """Close the SQLite connection if open."""
         if self._conn:
-            self._conn.close()
+            await self._conn.close()
             self._conn = None

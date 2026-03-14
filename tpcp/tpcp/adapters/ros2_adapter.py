@@ -83,10 +83,11 @@ class ROS2Adapter(BaseFrameworkAdapter):
 
         if isinstance(raw_output, dict) and "state" in raw_output:
             # It's a CRDT state sync
+            self._logical_clock += 1
             payload = CRDTSyncPayload(
                 crdt_type="LWW-Map",
                 state=raw_output["state"],
-                vector_clock=raw_output.get("vector_clock", {str(self.identity.agent_id): 1})
+                vector_clock=raw_output.get("vector_clock", {str(self.identity.agent_id): self._logical_clock})
             )
         elif isinstance(raw_output, str):
             payload = TextPayload(content=raw_output)

@@ -102,7 +102,7 @@ class VectorBank:
             
             # Validate dimensions match
             if len(stored_vector) != len(query_vector):
-                continue
+                raise ValueError(f"Dimension mismatch: query is {len(query_vector)}d, stored vector '{pid}' is {len(stored_vector)}d.")
             
             # Dot product
             dot = sum(a * b for a, b in zip(query_vector, stored_vector))

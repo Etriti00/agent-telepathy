@@ -27,6 +27,7 @@ streams HA SSE state changes back to the swarm CRDT memory.
 import asyncio
 import json
 import logging
+import time
 from typing import Any, Callable, Dict, Optional
 from uuid import UUID
 
@@ -78,15 +79,17 @@ class HomeAssistantAdapter(BaseFrameworkAdapter):
         memory_state = {
             f"ha_{entity_id}": {
                 "value": state_data.get("state"),
-                "timestamp": int(asyncio.get_event_loop().time() * 1000),
+                "timestamp": int(time.monotonic() * 1000),
                 "writer_id": str(self.identity.agent_id)
             }
         }
         
+        self._logical_clock += 1
+        
         payload = CRDTSyncPayload(
             crdt_type="LWW-Map",
             state=memory_state,
-            vector_clock={str(self.identity.agent_id): 1}
+            vector_clock={str(self.identity.agent_id): self._logical_clock}
         )
 
         header = MessageHeader(

@@ -27,6 +27,7 @@ and natively injects sensor data streams into the swarm's CRDT state.
 import asyncio
 import json
 import logging
+import time
 from typing import Any, Callable, Dict, List, Optional
 from uuid import UUID
 
@@ -65,6 +66,7 @@ class MQTTAdapter(BaseFrameworkAdapter):
         
         self._on_tpcp_message_callback: Optional[Callable[[TPCPEnvelope], None]] = None
         self._subscribed_topics: List[str] = []
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
     def pack_thought(self, target_id: UUID, raw_output: Dict[str, Any], intent: Intent = Intent.STATE_SYNC) -> TPCPEnvelope:
         """
@@ -82,15 +84,17 @@ class MQTTAdapter(BaseFrameworkAdapter):
         memory_state = {
             f"mqtt_{topic.replace('/', '_')}": {
                 "value": value,
-                "timestamp": int(asyncio.get_event_loop().time() * 1000),
+                "timestamp": int(time.monotonic() * 1000),
                 "writer_id": str(self.identity.agent_id)
             }
         }
         
+        self._logical_clock += 1
+        
         payload = CRDTSyncPayload(
             crdt_type="LWW-Map",
             state=memory_state,
-            vector_clock={str(self.identity.agent_id): 1}
+            vector_clock={str(self.identity.agent_id): self._logical_clock}
         )
 
         header = MessageHeader(
@@ -127,6 +131,10 @@ class MQTTAdapter(BaseFrameworkAdapter):
         """
         self._subscribed_topics = topics
         self._on_tpcp_message_callback = on_message_callback
+        try:
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._loop = None
         
         try:
             self.client.connect(self.broker_host, self.broker_port, 60)
@@ -160,8 +168,8 @@ class MQTTAdapter(BaseFrameworkAdapter):
             envelope = self.pack_thought(UUID(int=0), raw_output, Intent.STATE_SYNC)
             
             # Bridge to TPCP network event loop seamlessly
-            if asyncio.get_event_loop().is_running():
-                asyncio.get_event_loop().call_soon_threadsafe(self._on_tpcp_message_callback, envelope)
+            if self._loop and self._loop.is_running():
+                self._loop.call_soon_threadsafe(self._on_tpcp_message_callback, envelope)
         except Exception as e:
             logger.warning(f"Error packing MQTT message for TPCP bridge: {e}")
 

@@ -35,7 +35,7 @@ class CrewAIAdapter(BaseFrameworkAdapter):
         super().__init__(agent_identity)
         self.identity_manager = identity_manager
 
-    async def pack_thought(self, native_output: Union[str, Dict[str, Any]], receiver_id: UUID, intent: Intent) -> TPCPEnvelope:
+    def pack_thought(self, target_id: UUID, native_output: Union[str, Dict[str, Any]], intent: Intent) -> TPCPEnvelope:
         """
         Wraps a CrewAI text or dict output into a signed TPCP TextPayload envelope.
         """
@@ -45,7 +45,7 @@ class CrewAIAdapter(BaseFrameworkAdapter):
             content_str = str(native_output)
 
         payload = TextPayload(content=content_str, language="en")
-        header = self._create_header(receiver_id, intent)
+        header = self._create_header(target_id, intent)
         
         signature = None
         if self.identity_manager:
@@ -53,7 +53,7 @@ class CrewAIAdapter(BaseFrameworkAdapter):
         
         return TPCPEnvelope(header=header, payload=payload, signature=signature)
 
-    async def unpack_payload(self, envelope: TPCPEnvelope) -> Union[str, Dict[str, Any]]:
+    def unpack_request(self, envelope: TPCPEnvelope) -> Union[str, Dict[str, Any]]:
         """
         Extracts a TPCP envelope payload back into a format CrewAI agents can parse.
         Usually returns the raw text content format.
