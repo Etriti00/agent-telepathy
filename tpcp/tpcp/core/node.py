@@ -26,6 +26,8 @@ import asyncio
 import json
 import logging
 from pathlib import Path
+import ssl
+import time
 from typing import Dict, Optional, Callable, Awaitable, Tuple, Type
 from uuid import UUID
 
@@ -42,7 +44,8 @@ from tpcp.schemas.envelope import (
     Payload,
     TextPayload,
     CRDTSyncPayload,
-    VectorEmbeddingPayload
+    VectorEmbeddingPayload,
+    PROTOCOL_VERSION
 )
 from tpcp.memory.crdt import LWWMap
 from tpcp.memory.vector import VectorBank
@@ -53,9 +56,6 @@ logger = logging.getLogger(__name__)
 
 # Type alias for intent handlers
 IntentHandler = Callable[[TPCPEnvelope, WebSocketServerProtocol], Awaitable[None]]
-
-# Protocol version — used for cross-node compatibility checks
-PROTOCOL_VERSION = "0.2.0"
 
 
 class TPCPNode:
@@ -78,12 +78,14 @@ class TPCPNode:
         adns_url: Optional[str] = None,
         identity_manager: Optional[AgentIdentityManager] = None,
         key_path: Optional[Path] = None,
-        auto_save_key: bool = False
+        auto_save_key: bool = False,
+        ssl_context: Optional[ssl.SSLContext] = None
     ):
         self.identity = identity
         self.host = host
         self.port = port
         self.adns_url = adns_url
+        self.ssl_context = ssl_context
         self._adns_ws: Optional[websockets.client.WebSocketClientProtocol] = None
         self._adns_registered = False
         
@@ -111,6 +113,9 @@ class TPCPNode:
         
         # Dead-Letter Queue (max 500 messages per peer)
         self.message_queue = MessageQueue(max_size_per_peer=500)
+
+        # Deduplication Cache (Replay protection)
+        self._seen_messages: Dict[UUID, float] = {}
 
         # Intent routing table
         self.handlers: Dict[Intent, IntentHandler] = {}
@@ -161,12 +166,19 @@ class TPCPNode:
         """Start the WebSocket server to listen for inbound TPCP messages."""
         logger.info(f"Node {self.identity.agent_id} starting on ws://{self.host}:{self.port}")
         logger.info(f"Protocol version: {PROTOCOL_VERSION}")
-        self._server = await websockets.serve(self._handle_connection, self.host, self.port)
+        
+        await self.shared_memory.connect()
+        
+        self._server = await websockets.serve(
+            self._handle_connection, 
+            self.host, 
+            self.port,
+            ssl=self.ssl_context
+        )
         self._running = True
         
         if self.adns_url:
-            loop = asyncio.get_event_loop()
-            loop.create_task(self._connect_to_adns())
+            asyncio.create_task(self._connect_to_adns())
 
     async def _connect_to_adns(self) -> None:
         """
@@ -178,7 +190,7 @@ class TPCPNode:
 
         while self._running:
             try:
-                async with websockets.client.connect(self.adns_url) as ws:
+                async with websockets.client.connect(self.adns_url, ssl=self.ssl_context) as ws:
                     self._adns_ws = ws
                     self._adns_registered = False
                     logger.info(f"Connected to Global A-DNS Relay at {self.adns_url}")
@@ -252,6 +264,8 @@ class TPCPNode:
                 pass
         self._peer_connections.clear()
         
+        await self.shared_memory.close()
+        
         if self._server:
             self._server.close()
             await self._server.wait_closed()
@@ -291,6 +305,19 @@ class TPCPNode:
                 return
             # ────────────────────────────────────────────────────────────────
             
+            # ── DEDUPLICATION (REPLAY PROTECTION) ────────────────────────────
+            current_time = time.monotonic()
+            if envelope.header.message_id in self._seen_messages:
+                logger.warning(f"Duplicate message {envelope.header.message_id} detected. Dropping.")
+                return
+            self._seen_messages[envelope.header.message_id] = current_time
+            
+            # Clean up old seen messages periodically (e.g., older than 5 minutes)
+            if len(self._seen_messages) > 1000:
+                expired = current_time - 300  # 5 minutes
+                self._seen_messages = {k: v for k, v in self._seen_messages.items() if v > expired}
+            # ────────────────────────────────────────────────────────────────
+            
             # ── SECURITY MIDDLEWARE ──────────────────────────────────────────
             if envelope.header.intent != Intent.HANDSHAKE:
                 sender_id = envelope.header.sender_id
@@ -325,13 +352,22 @@ class TPCPNode:
             logger.error(f"Failed to process inbound message: {e}")
 
     async def _handle_handshake(self, envelope: TPCPEnvelope, websocket: WebSocketServerProtocol) -> None:
-        """Auto-register handshake senders in the peer registry."""
+        """Auto-register handshake senders in the peer registry with signature verification."""
         logger.info(f"Handshake received from {envelope.header.sender_id}")
         
         if isinstance(envelope.payload, TextPayload):
             try:
                 sender_data = json.loads(envelope.payload.content)
                 sender_identity = AgentIdentity.model_validate(sender_data)
+                
+                if not envelope.signature:
+                    logger.warning(f"Handshake dropped: Unsigned packet from {envelope.header.sender_id}")
+                    return
+                
+                payload_dict = envelope.payload.model_dump()
+                if not AgentIdentityManager.verify_signature(sender_identity.public_key, envelope.signature, payload_dict):
+                    logger.warning(f"Handshake dropped: INVALID SIGNATURE from {envelope.header.sender_id}")
+                    return
                 
                 peer_host = websocket.remote_address[0] if websocket.remote_address else "unknown"
                 self.peer_registry[sender_identity.agent_id] = (sender_identity, f"ws://{peer_host}")
@@ -348,7 +384,7 @@ class TPCPNode:
         payload = envelope.payload
         if payload.crdt_type == "LWW-Map":
             logger.info(f"Merging incoming LWW-Map from {envelope.header.sender_id}...")
-            self.shared_memory.merge(payload.state)
+            await self.shared_memory.merge(payload.state)
             logger.info(f"[Semantic State Updated] Memory: {self.shared_memory.to_dict()}")
         else:
             logger.warning(f"Unsupported CRDT type: {payload.crdt_type}")
@@ -389,7 +425,7 @@ class TPCPNode:
         """Get or create a pooled WebSocket connection to a peer."""
         if target_id in self._peer_connections:
             ws = self._peer_connections[target_id]
-            if ws.open:
+            if not ws.closed:
                 return ws
             # Stale, remove
             del self._peer_connections[target_id]
@@ -399,7 +435,7 @@ class TPCPNode:
         
         _, endpoint = self.peer_registry[target_id]
         try:
-            ws = await websockets.client.connect(endpoint)
+            ws = await websockets.client.connect(endpoint, ssl=self.ssl_context)
             self._peer_connections[target_id] = ws
             return ws
         except Exception:
@@ -425,8 +461,7 @@ class TPCPNode:
         
         logger.warning(f"Pushing to DLQ for {target_id}.")
         await self.message_queue.enqueue(target_id, envelope)
-        loop = asyncio.get_event_loop()
-        loop.create_task(self._reconnect_and_drain(target_id))
+        asyncio.create_task(self._reconnect_and_drain(target_id))
 
     async def _reconnect_and_drain(self, target_id: UUID) -> None:
         """Exponential backoff reconnection. Drains DLQ one-at-a-time safely."""
@@ -439,7 +474,7 @@ class TPCPNode:
         
         while self._running and await self.message_queue.has_messages(target_id):
             try:
-                ws = await websockets.client.connect(endpoint)
+                ws = await websockets.client.connect(endpoint, ssl=self.ssl_context)
                 self._peer_connections[target_id] = ws
                 logger.info(f"[Network Restored] Draining DLQ for {target_id}...")
                     
@@ -487,7 +522,7 @@ class TPCPNode:
             logger.info(f"Broadcasting discovery to {len(seed_nodes)} seed nodes.")
             for address in seed_nodes:
                 try:
-                    async with connect(address) as websocket:
+                    async with connect(address, ssl=self.ssl_context) as websocket:
                         await websocket.send(serialized)
                         logger.debug(f"Sent discovery to {address}")
                 except Exception as e:

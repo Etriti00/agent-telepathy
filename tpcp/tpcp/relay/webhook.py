@@ -134,7 +134,7 @@ if __name__ == "__main__":
         identity_mgr = AgentIdentityManager(auto_save=False)
         identity = AgentIdentity(
             framework="FastAPI-Webhook-Gateway",
-            public_key=identity_mgr.public_key_base64,
+            public_key=identity_mgr.get_public_key_string(),
             capabilities=["http-bridge"]
         )
         

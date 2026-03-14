@@ -20,7 +20,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 from uuid import UUID
 
-from tpcp.schemas.envelope import TPCPEnvelope, Intent, AgentIdentity, MessageHeader
+from tpcp.schemas.envelope import TPCPEnvelope, Intent, AgentIdentity, MessageHeader, PROTOCOL_VERSION
 
 
 class BaseFrameworkAdapter(ABC):
@@ -29,18 +29,19 @@ class BaseFrameworkAdapter(ABC):
     and translating their native outputs into standardised TPCP envelopes.
     """
 
-    def __init__(self, agent_identity: AgentIdentity):
+    def __init__(self, agent_identity: AgentIdentity, identity_manager=None):
         self.identity = agent_identity
+        self.identity_manager = identity_manager
 
     @abstractmethod
-    async def pack_thought(self, native_output: Any, receiver_id: UUID, intent: Intent) -> TPCPEnvelope:
+    def pack_thought(self, target_id: UUID, raw_output: Any, intent: Intent) -> TPCPEnvelope:
         """
         Translates a framework-specific native string or state dictionary into a TPCPEnvelope.
         """
         pass
 
     @abstractmethod
-    async def unpack_payload(self, envelope: TPCPEnvelope) -> Any:
+    def unpack_request(self, envelope: TPCPEnvelope) -> Any:
         """
         Translates a received TPCPEnvelope payload back into a format the native framework understands.
         """
@@ -51,5 +52,6 @@ class BaseFrameworkAdapter(ABC):
         return MessageHeader(
             sender_id=self.identity.agent_id,
             receiver_id=receiver_id,
-            intent=intent
+            intent=intent,
+            protocol_version=PROTOCOL_VERSION
         )

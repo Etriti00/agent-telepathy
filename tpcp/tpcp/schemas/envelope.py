@@ -31,6 +31,9 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, Discriminator, Field, Tag, model_validator
 
 
+PROTOCOL_VERSION = "0.3.0"
+
+
 class Intent(str, Enum):
     """The intent or purpose of a TPCP message."""
     HANDSHAKE = "Handshake"
@@ -65,7 +68,7 @@ class MessageHeader(BaseModel):
     receiver_id: UUID = Field(..., description="Agent ID of the intended receiver.")
     intent: Intent = Field(..., description="The semantic intent of the message.")
     ttl: int = Field(default=30, ge=0, description="Time-to-live in hops to prevent infinite loops.")
-    protocol_version: str = Field(default="0.2.0", description="TPCP protocol version for compatibility checks.")
+    protocol_version: str = Field(default=PROTOCOL_VERSION, description="TPCP protocol version for compatibility checks.")
 
 
 # ── DISCRIMINATED PAYLOAD TYPES ────────────────────────────────────────
