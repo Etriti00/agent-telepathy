@@ -28,7 +28,10 @@ def listen(port, host):
         click.echo(f"Listening on {host}:{port} — press Ctrl+C to stop")
         try:
             await node.start_listening()
-        except KeyboardInterrupt:
+        finally:
             await node.stop_listening()
 
-    asyncio.run(_listen())
+    try:
+        asyncio.run(_listen())
+    except KeyboardInterrupt:
+        pass

@@ -48,9 +48,11 @@ def send(target_url, intent, message, identity):
         try:
             await asyncio.wait_for(node.connect_to_peer(target_url), timeout=5.0)
             peer_ids = list(node.peer_registry.keys())
-            if peer_ids:
-                await node.send_message(peer_ids[0], intent_enum, TextPayload(content=message))
-                click.echo(f"Sent {intent} to {target_url}")
+            if not peer_ids:
+                click.echo(f"Error: connected to {target_url} but no peer registered", err=True)
+                return
+            await node.send_message(peer_ids[0], intent_enum, TextPayload(content=message))
+            click.echo(f"Sent {intent} to {target_url}")
         except Exception as e:
             click.echo(f"Error: {e}", err=True)
         finally:

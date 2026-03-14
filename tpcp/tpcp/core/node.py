@@ -508,8 +508,11 @@ class TPCPNode:
         payload: Payload,
         require_ack: bool = False,
         chunk_info: Optional[ChunkInfo] = None,
-    ) -> None:
-        """Sign and dispatch a TPCP message to a specific peer in the registry."""
+    ) -> UUID:
+        """Sign and dispatch a TPCP message to a specific peer in the registry.
+
+        Returns the message_id of the sent envelope.
+        """
         header = MessageHeader(
             sender_id=self.identity.agent_id,
             receiver_id=target_id,
@@ -536,6 +539,8 @@ class TPCPNode:
             except asyncio.TimeoutError:
                 self._pending_acks.pop(envelope.header.message_id, None)
                 raise asyncio.TimeoutError(f"No ACK received for {envelope.header.message_id} within 30s")
+
+        return envelope.header.message_id
 
     async def send_broadcast(self, intent: Intent, payload: Payload) -> int:
         """

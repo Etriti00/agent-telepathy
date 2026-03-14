@@ -308,6 +308,9 @@ class ADNSRelayServer:
             await asyncio.Future()
 
 if __name__ == "__main__":
-    port = int(os.environ.get("TPCP_PORT", "8765"))
+    try:
+        port = int(os.environ.get("TPCP_PORT", "8765"))
+    except ValueError:
+        port = 8765
     server = ADNSRelayServer("0.0.0.0", port)
     asyncio.run(server.start())

@@ -95,7 +95,8 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - **Dual License**: AGPL v3 (open source) + Commercial License
 - **CI/CD**: GitHub Actions for Python (pytest, ruff, mypy) and TypeScript (jest)
 
-[Unreleased]: https://github.com/tpcp-protocol/tpcp/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/tpcp-protocol/tpcp/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/tpcp-protocol/tpcp/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/tpcp-protocol/tpcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/tpcp-protocol/tpcp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/tpcp-protocol/tpcp/releases/tag/v0.1.0

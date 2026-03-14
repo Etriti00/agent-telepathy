@@ -41,11 +41,20 @@ func (m *LWWMap) Get(key string) (interface{}, bool) {
 }
 
 // Merge applies all entries from other, keeping higher-timestamp values.
+// The snapshot approach avoids deadlock when m == other or when both mutexes
+// would otherwise be held simultaneously across the Set call.
 func (m *LWWMap) Merge(other *LWWMap) {
 	other.mu.RLock()
-	defer other.mu.RUnlock()
+	snapshot := make([]lwwEntry, 0, len(other.entries))
+	keys := make([]string, 0, len(other.entries))
 	for k, v := range other.entries {
-		m.Set(k, v.Value, v.TimestampMs)
+		keys = append(keys, k)
+		snapshot = append(snapshot, v)
+	}
+	other.mu.RUnlock()
+
+	for i, k := range keys {
+		m.Set(k, snapshot[i].Value, snapshot[i].TimestampMs)
 	}
 }
 
