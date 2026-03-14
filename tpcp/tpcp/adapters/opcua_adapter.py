@@ -27,15 +27,22 @@ Requires: pip install tpcp-core[industrial]
 """
 from __future__ import annotations
 
+import base64
 import json
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 from uuid import UUID
 
 from tpcp.adapters.base import BaseFrameworkAdapter
 from tpcp.schemas.envelope import (
-    AgentIdentity, Intent, TelemetryPayload, TelemetryReading, TextPayload, TPCPEnvelope
+    AgentIdentity, BinaryPayload, Intent, TelemetryPayload, TelemetryReading,
+    TextPayload, TPCPEnvelope,
 )
+
+# Threshold above which a bytes/bytearray OPC-UA value is returned as BinaryPayload.
+# Callers that need chunked transfer should pass the result through
+# tpcp.core.chunker.send_chunked().
+_BINARY_THRESHOLD_BYTES = 65536
 
 try:
     from asyncua import Client as OPCUAClient
@@ -87,21 +94,45 @@ class OPCUAAdapter(BaseFrameworkAdapter):
         intent: Intent = Intent.STATE_SYNC,
     ) -> TPCPEnvelope:
         """
-        Convert an OPC-UA DataChange notification into a TelemetryPayload envelope.
+        Convert an OPC-UA DataChange notification into a TPCP payload envelope.
+
+        For scalar numeric/bool values returns a TelemetryPayload.
+        For ``bytes`` or ``bytearray`` values returns a BinaryPayload with the
+        data base64-encoded and the OPC-UA node_id in the description field.
+
+        Note: for large binary values callers should decode the BinaryPayload and
+        pass the raw bytes to ``tpcp.core.chunker.send_chunked()`` for chunked delivery.
 
         Args:
             raw_output: Dict with keys:
                 - "node_id" (str): OPC-UA NodeId string
-                - "value" (float|int|bool): The data value
+                - "value" (float|int|bool|bytes|bytearray): The data value
                 - "timestamp_ms" (int): Unix epoch milliseconds
                 - "quality" (str, optional): "Good", "Bad", or "Uncertain"
+                - "unit" (str, optional): Engineering unit for numeric values
         """
         self._logical_clock += 1
         node_id = str(raw_output.get("node_id", "unknown"))
-        sensor_id = "opcua_" + node_id.replace(":", "_").replace(";", "_").replace("=", "_")
+        value = raw_output.get("value", 0.0)
 
+        # --- Binary branch: bytes / bytearray values ---
+        if isinstance(value, (bytes, bytearray)):
+            data_b64 = base64.b64encode(bytes(value)).decode("ascii")
+            payload: Union[BinaryPayload, TelemetryPayload] = BinaryPayload(
+                data_base64=data_b64,
+                mime_type="application/octet-stream",
+                description=f"opcua:{node_id}",
+            )
+            header = self._create_header(receiver_id=target_id, intent=intent)
+            envelope = TPCPEnvelope(header=header, payload=payload)
+            if self.identity_manager:
+                envelope.signature = self.identity_manager.sign_payload(payload.model_dump())
+            return envelope
+
+        # --- Numeric / scalar branch ---
+        sensor_id = "opcua_" + node_id.replace(":", "_").replace(";", "_").replace("=", "_")
         reading = TelemetryReading(
-            value=float(raw_output.get("value", 0.0)),
+            value=float(value),
             timestamp_ms=int(raw_output.get("timestamp_ms", 0)),
             quality=raw_output.get("quality"),
         )
@@ -121,7 +152,12 @@ class OPCUAAdapter(BaseFrameworkAdapter):
         """
         Translate a TPCP TASK_REQUEST envelope into an OPC-UA write command.
 
-        Returns a dict with keys: "node_id", "value" — the caller must execute the write.
+        Returns a dict with keys: "node_id", "value".  Pass the result to
+        ``execute_write()`` to perform the actual OPC-UA node write::
+
+            cmd = adapter.unpack_request(envelope)
+            await adapter.execute_write(cmd)
+
         Expected TextPayload content: JSON string like {"node_id": "ns=2;i=2", "value": 42}
         """
         if hasattr(envelope.payload, "content"):
@@ -130,6 +166,42 @@ class OPCUAAdapter(BaseFrameworkAdapter):
             except (json.JSONDecodeError, AttributeError):
                 return {"raw": envelope.payload.content}
         return {}
+
+    async def execute_write(self, write_cmd: Dict[str, Any]) -> bool:
+        """
+        Write a value to an OPC-UA node.
+
+        Connects to the server if ``self._client`` is not already connected.
+        Use after ``unpack_request()``::
+
+            cmd = adapter.unpack_request(envelope)
+            await adapter.execute_write(cmd)
+
+        Args:
+            write_cmd: Dict with keys:
+                - "node_id" (str): OPC-UA NodeId string, e.g. "ns=2;i=2"
+                - "value": Value to write (int, float, bool, etc.)
+
+        Returns:
+            True if the write succeeded, False otherwise.
+        """
+        if not write_cmd.get("node_id"):
+            logger.error("[OPCUAAdapter] execute_write called with missing node_id")
+            return False
+        try:
+            if self._client is None:
+                self._client = OPCUAClient(self.server_url)
+                await self._client.connect()
+                logger.info(f"[OPCUAAdapter] Connected to {self.server_url} for write")
+            node = self._client.get_node(write_cmd["node_id"])
+            await node.write_value(write_cmd["value"])
+            logger.debug(
+                f"[OPCUAAdapter] Wrote {write_cmd['value']!r} to {write_cmd['node_id']}"
+            )
+            return True
+        except Exception as exc:
+            logger.error(f"[OPCUAAdapter] execute_write failed: {exc}")
+            return False
 
     async def start_subscription(
         self,

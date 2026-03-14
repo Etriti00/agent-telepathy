@@ -132,8 +132,13 @@ class ModbusAdapter(BaseFrameworkAdapter):
         """
         Translate a TPCP TASK_REQUEST into a Modbus write command dict.
 
+        Returns the parsed command dict.  Pass the result to ``execute_write()``
+        to perform the actual register write::
+
+            cmd = adapter.unpack_request(envelope)
+            await adapter.execute_write(cmd)
+
         Expected TextPayload content: JSON like {"address": 100, "value": 1, "type": "coil"}
-        The caller is responsible for executing the write via execute_write().
         """
         if hasattr(envelope.payload, "content"):
             try:
@@ -142,32 +147,78 @@ class ModbusAdapter(BaseFrameworkAdapter):
                 return {"raw": envelope.payload.content}
         return {}
 
+    async def _do_write(self, write_cmd: Dict[str, Any]) -> None:
+        """
+        Execute a single Modbus write against the active client connection.
+
+        Raises on any pymodbus error so callers can distinguish success from failure.
+
+        Args:
+            write_cmd: Dict with "address", "value", and optional
+                "type" ("coil" or "holding", default "holding").
+        """
+        cmd_type = write_cmd.get("type", "holding")
+        address = int(write_cmd["address"])
+        value = write_cmd["value"]
+        if cmd_type == "coil":
+            await self._client.write_coil(address, bool(value), unit=self.unit_id)
+        else:
+            await self._client.write_register(address, int(value), unit=self.unit_id)
+
     async def execute_write(self, write_cmd: Dict[str, Any]) -> bool:
         """
-        Execute a Modbus write command.
+        Execute a Modbus write command, retrying any previously queued failures first.
+
+        If not connected, the command is added to the retry queue and False is returned.
+        When a write succeeds, ``drain_retry_queue()`` runs first to replay any commands
+        queued during earlier connection drops.
 
         Args:
             write_cmd: Dict with "address", "value", "type" ("coil" or "holding").
 
         Returns:
-            True if successful, False otherwise.
+            True if the write succeeded, False otherwise.
         """
         if not self._client or not self._client.connected:
-            logger.error("[ModbusAdapter] Not connected — cannot write")
+            logger.error("[ModbusAdapter] Not connected — cannot write; queuing command")
+            self._retry_queue.append(write_cmd)
             return False
         try:
-            cmd_type = write_cmd.get("type", "holding")
-            address = int(write_cmd["address"])
-            value = write_cmd["value"]
-            if cmd_type == "coil":
-                await self._client.write_coil(address, bool(value), unit=self.unit_id)
-            else:
-                await self._client.write_register(address, int(value), unit=self.unit_id)
+            await self.drain_retry_queue()
+            await self._do_write(write_cmd)
             return True
         except Exception as exc:
             logger.error(f"[ModbusAdapter] Write failed: {exc}")
             self._retry_queue.append(write_cmd)
             return False
+
+    async def drain_retry_queue(self) -> int:
+        """
+        Retry all previously failed write commands.
+
+        Iterates through ``_retry_queue``, attempts each write via ``_do_write()``,
+        and removes successful ones.  Commands that still fail remain in the queue.
+
+        Called automatically at the start of each ``execute_write()`` call, and may
+        also be called explicitly after re-establishing a connection.
+
+        Returns:
+            Number of commands successfully retried and removed from the queue.
+        """
+        if not self._retry_queue:
+            return 0
+        remaining = []
+        retried = 0
+        for cmd in list(self._retry_queue):
+            try:
+                await self._do_write(cmd)
+                retried += 1
+                logger.debug(f"[ModbusAdapter] Retried queued write: {cmd}")
+            except Exception as exc:
+                logger.warning(f"[ModbusAdapter] Queued write still failing: {exc}")
+                remaining.append(cmd)
+        self._retry_queue = remaining
+        return retried
 
     async def poll_registers(
         self,

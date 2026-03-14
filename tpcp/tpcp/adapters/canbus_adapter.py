@@ -34,6 +34,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 from typing import Any, Callable, Dict, List, Optional
 from uuid import UUID
 
@@ -87,6 +88,8 @@ class CANbusAdapter(BaseFrameworkAdapter):
         self.channel = channel
         self.bitrate = bitrate
         self._bus: Optional[Any] = None
+        self._running: bool = False
+        self._reader_thread: Optional[threading.Thread] = None
 
     def pack_thought(
         self,
@@ -168,35 +171,75 @@ class CANbusAdapter(BaseFrameworkAdapter):
 
     async def start_listening(
         self,
-        on_message_callback: Callable[[TPCPEnvelope, UUID], None],
-        can_ids: Optional[List[int]] = None,
+        can_ids: Optional[List[int]],
+        callback: Callable[[TPCPEnvelope, UUID], None],
         target_id: Optional[UUID] = None,
     ) -> None:
         """
-        Open the CAN bus and start receiving frames.
+        Open the CAN bus and start receiving frames in a background OS thread.
 
-        Bridges the CAN receive thread to asyncio using call_soon_threadsafe()
-        to avoid blocking the event loop.
+        Frames are bridged from the blocking CAN receive thread to the asyncio
+        event loop via ``loop.call_soon_threadsafe()``, matching the MQTTAdapter
+        pattern.  Returns immediately after starting the thread; call
+        ``stop_listening()`` to shut down.
 
         Args:
-            on_message_callback: Called with (envelope, target_id) for each received frame.
-            can_ids: Allowlist of CAN arbitration IDs to bridge. None = bridge all (noisy).
-            target_id: Receiver UUID (defaults to BROADCAST_UUID).
+            can_ids: Allowlist of CAN arbitration IDs to forward.  Pass ``None``
+                to receive all IDs (high-traffic bus warning).
+            callback: Called with ``(envelope, target_id)`` for each received frame.
+            target_id: Receiver UUID for outgoing envelopes (defaults to BROADCAST_UUID).
         """
         from tpcp.core.node import BROADCAST_UUID
         effective_target = target_id or BROADCAST_UUID
         loop = asyncio.get_event_loop()
 
-        self._bus = can.Bus(interface=self.interface, channel=self.channel, bitrate=self.bitrate)
-        logger.info(f"[CANbusAdapter] Opened {self.interface}/{self.channel} at {self.bitrate} bps")
+        self._bus = can.Bus(
+            interface=self.interface, channel=self.channel, bitrate=self.bitrate
+        )
+        self._running = True
+        logger.info(
+            f"[CANbusAdapter] Opened {self.interface}/{self.channel} at {self.bitrate} bps"
+        )
 
-        reader = can.AsyncBufferedReader()
-        notifier = can.Notifier(self._bus, [reader])
+        def _can_reader_thread() -> None:
+            """Background thread: blocking CAN recv loop bridged to asyncio."""
+            while self._running:
+                try:
+                    msg = self._bus.recv(timeout=1.0)
+                    if msg is None:
+                        continue
+                    if can_ids is not None and msg.arbitration_id not in can_ids:
+                        continue
+                    # Bridge from OS thread to asyncio event loop
+                    loop.call_soon_threadsafe(
+                        lambda m=msg: asyncio.ensure_future(
+                            self._dispatch_frame(m, callback, effective_target)
+                        )
+                    )
+                except Exception as exc:
+                    loop.call_soon_threadsafe(
+                        lambda e=exc: logger.error("[CANbusAdapter] CAN read error: %s", e)
+                    )
 
-        async for msg in reader:
-            if can_ids is not None and msg.arbitration_id not in can_ids:
-                continue
+        self._reader_thread = threading.Thread(
+            target=_can_reader_thread, daemon=True, name="canbus-reader"
+        )
+        self._reader_thread.start()
+        logger.info("[CANbusAdapter] CAN reader thread started")
 
+    async def _dispatch_frame(
+        self,
+        msg: Any,
+        callback: Callable[[TPCPEnvelope, UUID], None],
+        target_id: UUID,
+    ) -> None:
+        """
+        Dispatch a single CAN frame to the callback as a TelemetryPayload envelope.
+
+        Runs in the asyncio event loop, scheduled via call_soon_threadsafe from the
+        CAN reader thread.
+        """
+        try:
             raw_output = {
                 "arbitration_id": msg.arbitration_id,
                 "data": list(msg.data),
@@ -204,12 +247,22 @@ class CANbusAdapter(BaseFrameworkAdapter):
                 "timestamp": msg.timestamp,
                 "is_extended_id": msg.is_extended_id,
             }
+            envelope = self.pack_thought(target_id, raw_output, Intent.MEDIA_SHARE)
+            callback(envelope, target_id)
+        except Exception as exc:
+            logger.error(f"[CANbusAdapter] Dispatch error: {exc}")
 
-            def _dispatch(ro=raw_output):
-                try:
-                    envelope = self.pack_thought(effective_target, ro, Intent.MEDIA_SHARE)
-                    on_message_callback(envelope, effective_target)
-                except Exception as exc:
-                    logger.error(f"[CANbusAdapter] Dispatch error: {exc}")
+    def stop_listening(self) -> None:
+        """
+        Signal the CAN reader thread to stop and close the bus.
 
-            loop.call_soon_threadsafe(_dispatch)
+        The thread exits on its next ``recv()`` timeout (at most 1 second).
+        """
+        self._running = False
+        if self._bus is not None:
+            try:
+                self._bus.shutdown()
+            except Exception as exc:
+                logger.warning(f"[CANbusAdapter] Error during bus shutdown: {exc}")
+            self._bus = None
+        logger.info("[CANbusAdapter] Stopped listening")
