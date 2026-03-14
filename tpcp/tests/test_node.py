@@ -164,67 +164,69 @@ async def test_dlq_enqueue_front():
 
 # ── CRDT TESTS ───────────────────────────────────────────────────────
 
-def test_lwwmap_basic_set_get():
+async def test_lwwmap_basic_set_get():
     crdt = LWWMap(node_id="agent-a")
-    crdt.set("key1", "value1")
+    await crdt.set("key1", "value1")
     assert crdt.get("key1") == "value1"
 
 
-def test_lwwmap_last_writer_wins():
+async def test_lwwmap_last_writer_wins():
     crdt = LWWMap(node_id="agent-a")
-    crdt.set("key1", "old", timestamp=1, writer_id="agent-a")
-    crdt.set("key1", "new", timestamp=2, writer_id="agent-b")
+    await crdt.set("key1", "old", timestamp=1, writer_id="agent-a")
+    await crdt.set("key1", "new", timestamp=2, writer_id="agent-b")
     assert crdt.get("key1") == "new"
 
 
-def test_lwwmap_merge():
+async def test_lwwmap_merge():
     a = LWWMap(node_id="a")
     b = LWWMap(node_id="b")
-    
-    a.set("x", 1, timestamp=1, writer_id="a")
-    b.set("y", 2, timestamp=2, writer_id="b")
-    
-    a.merge(b.serialize_state())
-    
+
+    await a.set("x", 1, timestamp=1, writer_id="a")
+    await b.set("y", 2, timestamp=2, writer_id="b")
+
+    await a.merge(b.serialize_state())
+
     assert a.get("x") == 1
     assert a.get("y") == 2
 
 
-def test_lwwmap_commutativity():
+async def test_lwwmap_commutativity():
     """merge(A, B) == merge(B, A)"""
     a = LWWMap(node_id="a")
     b = LWWMap(node_id="b")
-    
-    a.set("shared", "from-a", timestamp=5, writer_id="a")
-    b.set("shared", "from-b", timestamp=5, writer_id="b")
-    
+
+    await a.set("shared", "from-a", timestamp=5, writer_id="a")
+    await b.set("shared", "from-b", timestamp=5, writer_id="b")
+
     # A merges B
     ab = LWWMap(node_id="test")
-    ab.merge(a.serialize_state())
-    ab.merge(b.serialize_state())
-    
-    # B merges A  
+    await ab.merge(a.serialize_state())
+    await ab.merge(b.serialize_state())
+
+    # B merges A
     ba = LWWMap(node_id="test")
-    ba.merge(b.serialize_state())
-    ba.merge(a.serialize_state())
-    
+    await ba.merge(b.serialize_state())
+    await ba.merge(a.serialize_state())
+
     assert ab.to_dict() == ba.to_dict()
 
 
-def test_lwwmap_sqlite_persistence():
+async def test_lwwmap_sqlite_persistence():
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "memory.db"
-        
+
         crdt1 = LWWMap(node_id="agent-1", db_path=db_path)
-        crdt1.set("key1", "hello")
-        crdt1.set("key2", {"nested": True})
-        crdt1.close()
-        
+        await crdt1.connect()
+        await crdt1.set("key1", "hello")
+        await crdt1.set("key2", {"nested": True})
+        await crdt1.close()
+
         # Reload from disk
         crdt2 = LWWMap(node_id="agent-1", db_path=db_path)
+        await crdt2.connect()
         assert crdt2.get("key1") == "hello"
         assert crdt2.get("key2") == {"nested": True}
-        crdt2.close()
+        await crdt2.close()
 
 
 # ── VECTOR BANK TESTS ────────────────────────────────────────────────
