@@ -24,11 +24,13 @@ Translates TPCP TaskRequests into HA REST service-calls, and
 streams HA SSE state changes back to the swarm CRDT memory.
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
 import time
-from typing import Any, Callable, Dict, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 from uuid import UUID
 
 try:
@@ -36,6 +38,9 @@ try:
     AIOHTTP_AVAILABLE = True
 except ImportError:
     AIOHTTP_AVAILABLE = False
+
+if TYPE_CHECKING:
+    import aiohttp
 
 from tpcp.adapters.base import BaseFrameworkAdapter
 from tpcp.schemas.envelope import (
