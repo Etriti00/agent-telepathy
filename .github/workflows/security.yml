@@ -42,6 +42,7 @@ jobs:
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
+          trivyignores: .trivyignore
 
   pip-audit:
     name: Python dependency audit
