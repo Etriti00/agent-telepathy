@@ -32,9 +32,9 @@ async def _build_server(url: str):
     uri = "urn:tpcp:test"
     idx = await server.register_namespace(uri)
     objects = server.nodes.objects
-    numeric_node = await objects.add_variable(idx, "Temperature", 42.0)
+    numeric_node = await objects.add_variable(ua.NodeId("Temperature", idx), "Temperature", 42.0)
     await numeric_node.set_writable()
-    bytes_node = await objects.add_variable(idx, "RawFrame", b"\x01\x02\x03")
+    bytes_node = await objects.add_variable(ua.NodeId("RawFrame", idx), "RawFrame", b"\x01\x02\x03")
     await bytes_node.set_writable()
     return server, idx
 
