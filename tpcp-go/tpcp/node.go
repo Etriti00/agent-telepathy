@@ -123,7 +123,7 @@ func (n *TPCPNode) SendMessage(peerID string, intent Intent, payload interface{}
 	envelope := &TPCPEnvelope{
 		Header: MessageHeader{
 			MessageID:       randomUUID(),
-			Timestamp:       time.Now().UTC().Format(time.RFC3339Nano),
+			Timestamp:       time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
 			SenderID:        n.Identity.AgentID,
 			ReceiverID:      peerID,
 			Intent:          intent,
