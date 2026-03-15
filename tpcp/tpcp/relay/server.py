@@ -109,6 +109,13 @@ class ADNSRelayServer:
                     await websocket.close(1008, "Rate limit exceeded")
                     break
                 
+                if isinstance(message, str) and len(message) > 1_048_576:
+                    await websocket.close(1009, "Message too large")
+                    break
+                elif isinstance(message, bytes) and len(message) > 1_048_576:
+                    await websocket.close(1009, "Message too large")
+                    break
+
                 try:
                     data = json.loads(message)
                     header = data.get("header", {})

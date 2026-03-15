@@ -185,7 +185,7 @@ class MQTTAdapter(BaseFrameworkAdapter):
             logger.warning(f"Error packing MQTT message for TPCP bridge: {e}")
 
     def _on_disconnect(self, client, userdata, rc):
-        logger.warning(f"Disconnected from MQTT broker (code: {rc}). Broker connection loop handles recoonect automatically.")
+        logger.warning(f"Disconnected from MQTT broker (code: {rc}). Broker connection loop handles reconnect automatically.")
 
     def stop(self):
         """Teardown background Paho-MQTT Thread and cleanly disconnect."""
