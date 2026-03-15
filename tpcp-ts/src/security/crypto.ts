@@ -105,7 +105,8 @@ export class AgentIdentityManager {
   }
 
   public getPublicKeyString(): string {
-    return Buffer.from(this._publicKey).toString('base64');
+    // btoa + Uint8Array works in Node.js ≥16 and all modern browsers (no Buffer dependency)
+    return btoa(String.fromCharCode(...this._publicKey));
   }
 
   public getPrivateKeySeed(): Uint8Array {
