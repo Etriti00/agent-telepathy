@@ -36,6 +36,13 @@ function getDefaultKeyPath(): string {
   return path.join(os.homedir(), '.tpcp', 'identity.key');
 }
 
+function base64ToBytes(b64: string): Uint8Array {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
 export class AgentIdentityManager {
   private _privateKey: Uint8Array;
   private _publicKey: Uint8Array;
@@ -136,18 +143,18 @@ export class AgentIdentityManager {
     const serialized = stringify(payloadDict);
     const messageUint8 = new TextEncoder().encode(serialized);
     const signature = nacl.sign.detached(messageUint8, this._privateKey);
-    return Buffer.from(signature).toString('base64');
+    return btoa(String.fromCharCode(...signature));
   }
 
   public signBytes(data: Uint8Array): string {
     const signature = nacl.sign.detached(data, this._privateKey);
-    return Buffer.from(signature).toString('base64');
+    return btoa(String.fromCharCode(...signature));
   }
 
   public static verifySignature(publicKeyStr: string, signatureStr: string, payloadDict: Record<string, any>): boolean {
     try {
-      const publicKey = new Uint8Array(Buffer.from(publicKeyStr, 'base64'));
-      const signature = new Uint8Array(Buffer.from(signatureStr, 'base64'));
+      const publicKey = base64ToBytes(publicKeyStr);
+      const signature = base64ToBytes(signatureStr);
       const serialized = stringify(payloadDict);
       const messageUint8 = new TextEncoder().encode(serialized);
       return nacl.sign.detached.verify(messageUint8, signature, publicKey);
@@ -158,8 +165,8 @@ export class AgentIdentityManager {
 
   public static verifyBytes(publicKeyStr: string, signatureStr: string, data: Uint8Array): boolean {
     try {
-      const publicKey = new Uint8Array(Buffer.from(publicKeyStr, 'base64'));
-      const signature = new Uint8Array(Buffer.from(signatureStr, 'base64'));
+      const publicKey = base64ToBytes(publicKeyStr);
+      const signature = base64ToBytes(signatureStr);
       return nacl.sign.detached.verify(data, signature, publicKey);
     } catch (e) {
       return false;

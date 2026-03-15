@@ -48,8 +48,8 @@ export class RelayTPCPNode extends TPCPNode {
       `[RelayTPCPNode] Starting in relay-only mode via ${this.adnsUrl} (no local server port)`
     );
     // Set _running so the ADNS reconnect loop stays alive
-    (this as any)._running = true;
-    // Invoke the private ADNS connection method directly
-    (this as any)._connectToADNS();
+    this._running = true;
+    // Start the ADNS connection loop (inherited from TPCPNode)
+    this._connectToADNS();
   }
 }

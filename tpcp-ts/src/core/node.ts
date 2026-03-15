@@ -150,7 +150,7 @@ export class TPCPNode extends EventEmitter {
   private _server?: WebSocket.Server;
   private _adnsWs?: WebSocket;
   private _adnsRegistered: boolean = false;
-  private _running: boolean = false;
+  protected _running: boolean = false;
   private _peerConnections: Map<string, WebSocket> = new Map();
 
   constructor(identity: AgentIdentity, host: string = "127.0.0.1", port: number = 8000, adnsUrl?: string) {
@@ -215,7 +215,7 @@ export class TPCPNode extends EventEmitter {
     }
   }
 
-  private _connectToADNS(): void {
+  protected _connectToADNS(): void {
     if (!this.adnsUrl || !this._running) return;
 
     let backoff = 1000;
