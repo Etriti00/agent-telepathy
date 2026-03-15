@@ -24,7 +24,6 @@ Agent Domain Name System (A-DNS) Relay Server with:
 """
 
 import asyncio
-import http
 import json
 import os
 import time

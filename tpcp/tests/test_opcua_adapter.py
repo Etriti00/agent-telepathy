@@ -15,30 +15,17 @@ from tpcp.schemas.envelope import TelemetryPayload, BinaryPayload
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-try:
-    from asyncua.crypto.permission_rules import PermissionRuleset as _PermissionRuleset
-
-    class _AllowAll(_PermissionRuleset):
-        """Permissive ruleset for test servers — allows all operations."""
-        def check_validity(self, user, action_type, body):
-            return True
-except ImportError:
-    _AllowAll = None  # type: ignore
-
 
 async def _build_server(url: str):
     """Spin up a minimal asyncua server, add one numeric and one bytes node."""
     server = OPCUAServer()
     await server.init()
     server.set_endpoint(url)
-    # Use the public set_security_policy API with a permissive ruleset so that
-    # anonymous clients can perform writes without being blocked by
-    # SimpleRoleRuleset (the asyncua default which denies all anonymous writes).
-    permission_ruleset = _AllowAll() if _AllowAll is not None else None
-    server.set_security_policy(
-        [ua.SecurityPolicyType.NoSecurity],
-        permission_ruleset=permission_ruleset,
-    )
+    server.set_security_policy([ua.SecurityPolicyType.NoSecurity])
+    # Disable the default SimpleRoleRuleset so anonymous clients can write.
+    # iserver.permission_ruleset is a public attribute; setting it to None
+    # bypasses RBAC entirely.  asyncua.crypto is not required.
+    server.iserver.permission_ruleset = None
     uri = "urn:tpcp:test"
     idx = await server.register_namespace(uri)
     objects = server.nodes.objects
