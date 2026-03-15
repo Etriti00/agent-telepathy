@@ -187,7 +187,9 @@ fn uuid_v4() -> String {
 
 fn now_iso8601() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+    let dur = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let secs = dur.as_secs();
+    let millis = dur.subsec_millis();
     let sec = secs % 60;
     let min = (secs / 60) % 60;
     let hour = (secs / 3600) % 24;
@@ -206,5 +208,5 @@ fn now_iso8601() -> String {
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = if m <= 2 { y + 1 } else { y };
 
-    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, m, d, hour, min, sec)
+    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z", y, m, d, hour, min, sec, millis)
 }
