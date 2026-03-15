@@ -31,7 +31,11 @@ import time
 from typing import Any, Callable, Dict, Optional
 from uuid import UUID
 
-import aiohttp
+try:
+    import aiohttp
+    AIOHTTP_AVAILABLE = True
+except ImportError:
+    AIOHTTP_AVAILABLE = False
 
 from tpcp.adapters.base import BaseFrameworkAdapter
 from tpcp.schemas.envelope import (
@@ -54,6 +58,11 @@ class HomeAssistantAdapter(BaseFrameworkAdapter):
     """
 
     def __init__(self, identity: AgentIdentity, ha_url: str, ha_token: str, identity_manager=None):
+        if not AIOHTTP_AVAILABLE:
+            raise ImportError(
+                "aiohttp is required for HomeAssistantAdapter. "
+                "Install it with: pip install tpcp-core[edge]"
+            )
         super().__init__(identity, identity_manager)
         self.ha_url = ha_url.rstrip("/")
         self.headers = {
@@ -99,8 +108,10 @@ class HomeAssistantAdapter(BaseFrameworkAdapter):
             protocol_version=PROTOCOL_VERSION
         )
 
-        signature_str = self.identity_manager.sign_payload(payload.model_dump())
-        return TPCPEnvelope(header=header, payload=payload, signature=signature_str)
+        envelope = TPCPEnvelope(header=header, payload=payload)
+        if self.identity_manager:
+            envelope.signature = self.identity_manager.sign_payload(payload.model_dump())
+        return envelope
 
     async def execute_service_call(self, domain: str, service: str, entity_id: str, service_data: Optional[dict] = None) -> bool:
         """

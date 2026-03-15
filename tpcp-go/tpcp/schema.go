@@ -16,10 +16,8 @@ type Intent string
 const (
 	IntentHandshake       Intent = "Handshake"
 	IntentTaskRequest     Intent = "Task_Request"
-	IntentTaskResponse    Intent = "Task_Response"
 	IntentStateSync       Intent = "State_Sync"
 	IntentStateSyncVector Intent = "State_Sync_Vector"
-	IntentMemorySync      Intent = "Memory_Sync"
 	IntentMediaShare      Intent = "Media_Share"
 	IntentCritique        Intent = "Critique"
 	IntentTerminate       Intent = "Terminate"
@@ -29,7 +27,6 @@ const (
 )
 
 // AgentIdentity describes a TPCP agent.
-// Field names match the canonical Python SDK (public_key, framework, capabilities, modality).
 type AgentIdentity struct {
 	AgentID      string   `json:"agent_id"`
 	Framework    string   `json:"framework"`
@@ -39,7 +36,6 @@ type AgentIdentity struct {
 }
 
 // MessageHeader is the envelope header present on every TPCP message.
-// Timestamp is an ISO 8601 UTC string to match Python's datetime serialization.
 type MessageHeader struct {
 	MessageID       string `json:"message_id"`
 	Timestamp       string `json:"timestamp"`
@@ -50,11 +46,25 @@ type MessageHeader struct {
 	ProtocolVersion string `json:"protocol_version"`
 }
 
+// AckInfo references the message being acknowledged.
+type AckInfo struct {
+	AckedMessageID string `json:"acked_message_id"`
+}
+
+// ChunkInfo contains chunked-transfer metadata.
+type ChunkInfo struct {
+	ChunkIndex  int    `json:"chunk_index"`
+	TotalChunks int    `json:"total_chunks"`
+	TransferID  string `json:"transfer_id"`
+}
+
 // TPCPEnvelope is the top-level message container.
 type TPCPEnvelope struct {
 	Header    MessageHeader   `json:"header"`
 	Payload   json.RawMessage `json:"payload"`
 	Signature string          `json:"signature,omitempty"`
+	AckInfo   *AckInfo        `json:"ack_info,omitempty"`
+	ChunkInfo *ChunkInfo      `json:"chunk_info,omitempty"`
 }
 
 // --- Payload types ---
@@ -66,41 +76,65 @@ type TextPayload struct {
 	Language    string `json:"language,omitempty"`
 }
 
+// VectorEmbeddingPayload carries semantic state via vector embeddings.
+type VectorEmbeddingPayload struct {
+	PayloadType     string    `json:"payload_type"`
+	ModelID         string    `json:"model_id"`
+	Dimensions      int       `json:"dimensions"`
+	Vector          []float64 `json:"vector"`
+	RawTextFallback string    `json:"raw_text_fallback,omitempty"`
+}
+
+// CRDTSyncPayload carries conflict-free replicated data type state.
+type CRDTSyncPayload struct {
+	PayloadType string                 `json:"payload_type"`
+	CRDTType    string                 `json:"crdt_type"`
+	State       map[string]interface{} `json:"state"`
+	VectorClock map[string]int         `json:"vector_clock"`
+}
+
+// ImagePayload carries base64-encoded image data.
+type ImagePayload struct {
+	PayloadType string `json:"payload_type"`
+	DataBase64  string `json:"data_base64"`
+	MimeType    string `json:"mime_type"`
+	Width       *int   `json:"width,omitempty"`
+	Height      *int   `json:"height,omitempty"`
+	SourceModel string `json:"source_model,omitempty"`
+	Caption     string `json:"caption,omitempty"`
+}
+
+// AudioPayload carries base64-encoded audio data.
+type AudioPayload struct {
+	PayloadType     string   `json:"payload_type"`
+	DataBase64      string   `json:"data_base64"`
+	MimeType        string   `json:"mime_type"`
+	SampleRate      *int     `json:"sample_rate,omitempty"`
+	DurationSeconds *float64 `json:"duration_seconds,omitempty"`
+	SourceModel     string   `json:"source_model,omitempty"`
+	Transcript      string   `json:"transcript,omitempty"`
+}
+
+// VideoPayload carries base64-encoded video data.
+type VideoPayload struct {
+	PayloadType     string   `json:"payload_type"`
+	DataBase64      string   `json:"data_base64"`
+	MimeType        string   `json:"mime_type"`
+	Width           *int     `json:"width,omitempty"`
+	Height          *int     `json:"height,omitempty"`
+	DurationSeconds *float64 `json:"duration_seconds,omitempty"`
+	FPS             *float64 `json:"fps,omitempty"`
+	SourceModel     string   `json:"source_model,omitempty"`
+	Description     string   `json:"description,omitempty"`
+}
+
 // BinaryPayload carries base64-encoded binary data.
 type BinaryPayload struct {
 	PayloadType string `json:"payload_type"`
 	DataBase64  string `json:"data_base64"`
 	MimeType    string `json:"mime_type"`
+	Filename    string `json:"filename,omitempty"`
 	Description string `json:"description,omitempty"`
-}
-
-// TaskPayload describes an agent task.
-type TaskPayload struct {
-	PayloadType string                 `json:"payload_type"`
-	TaskName    string                 `json:"task_name"`
-	Parameters  map[string]interface{} `json:"parameters,omitempty"`
-	Result      interface{}            `json:"result,omitempty"`
-}
-
-// StatePayload carries key-value state for CRDT sync.
-type StatePayload struct {
-	PayloadType string                 `json:"payload_type"`
-	State       map[string]interface{} `json:"state"`
-	TimestampMs int64                  `json:"timestamp_ms"`
-}
-
-// MemoryPayload carries CRDT memory updates.
-type MemoryPayload struct {
-	PayloadType string                 `json:"payload_type"`
-	Updates     map[string]interface{} `json:"updates"`
-	TimestampMs int64                  `json:"timestamp_ms"`
-}
-
-// ThoughtPayload carries an agent's internal reasoning step.
-type ThoughtPayload struct {
-	PayloadType string  `json:"payload_type"`
-	Thought     string  `json:"thought"`
-	Confidence  float64 `json:"confidence,omitempty"`
 }
 
 // TelemetryReading is a single sensor reading.
@@ -119,9 +153,67 @@ type TelemetryPayload struct {
 	SourceProtocol string             `json:"source_protocol"`
 }
 
+// --- Constructors ---
+
 // NewTextPayload creates a TextPayload with the correct payload_type tag.
 func NewTextPayload(content string) *TextPayload {
 	return &TextPayload{PayloadType: "text", Content: content, Language: "en"}
+}
+
+// NewVectorEmbeddingPayload creates a VectorEmbeddingPayload.
+func NewVectorEmbeddingPayload(modelID string, dimensions int, vector []float64) *VectorEmbeddingPayload {
+	return &VectorEmbeddingPayload{
+		PayloadType: "vector_embedding",
+		ModelID:     modelID,
+		Dimensions:  dimensions,
+		Vector:      vector,
+	}
+}
+
+// NewCRDTSyncPayload creates a CRDTSyncPayload.
+func NewCRDTSyncPayload(crdtType string, state map[string]interface{}, vectorClock map[string]int) *CRDTSyncPayload {
+	return &CRDTSyncPayload{
+		PayloadType: "crdt_sync",
+		CRDTType:    crdtType,
+		State:       state,
+		VectorClock: vectorClock,
+	}
+}
+
+// NewImagePayload creates an ImagePayload.
+func NewImagePayload(dataBase64, mimeType string) *ImagePayload {
+	return &ImagePayload{
+		PayloadType: "image",
+		DataBase64:  dataBase64,
+		MimeType:    mimeType,
+	}
+}
+
+// NewAudioPayload creates an AudioPayload.
+func NewAudioPayload(dataBase64, mimeType string) *AudioPayload {
+	return &AudioPayload{
+		PayloadType: "audio",
+		DataBase64:  dataBase64,
+		MimeType:    mimeType,
+	}
+}
+
+// NewVideoPayload creates a VideoPayload.
+func NewVideoPayload(dataBase64, mimeType string) *VideoPayload {
+	return &VideoPayload{
+		PayloadType: "video",
+		DataBase64:  dataBase64,
+		MimeType:    mimeType,
+	}
+}
+
+// NewBinaryPayload creates a BinaryPayload.
+func NewBinaryPayload(dataBase64, mimeType string) *BinaryPayload {
+	return &BinaryPayload{
+		PayloadType: "binary",
+		DataBase64:  dataBase64,
+		MimeType:    mimeType,
+	}
 }
 
 // NewTelemetryPayload creates a TelemetryPayload.

@@ -192,7 +192,7 @@ export const TPCPEnvelopeSchema = z.object({
   header: MessageHeaderSchema,
   payload: PayloadSchema,
   signature: z.string().nullable().optional(),
-  ack_info: AckInfoSchema.optional(),
-  chunk_info: ChunkInfoSchema.optional(),
+  ack_info: AckInfoSchema.nullable().optional(),
+  chunk_info: ChunkInfoSchema.nullable().optional(),
 });
 export type TPCPEnvelope = z.infer<typeof TPCPEnvelopeSchema>;

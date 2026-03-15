@@ -1,0 +1,70 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+*.whl
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+*.cover
+
+# ── TypeScript / Node.js ─────────────────────────────────────────────────────
+node_modules/
+*.tsbuildinfo
+*.js.map
+
+# ── Go ───────────────────────────────────────────────────────────────────────
+# Compiled binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# ── Rust ─────────────────────────────────────────────────────────────────────
+target/
+Cargo.lock
+!tpcp-rs/Cargo.lock
+
+# ── Java / Maven ─────────────────────────────────────────────────────────────
+*.class
+*.jar
+*.war
+*.ear
+tpcp-java/target/
+
+# ── IDE ──────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# ── OS ───────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ── Docker ───────────────────────────────────────────────────────────────────
+docker-compose.override.yml
+
+# ── Environment / Secrets ────────────────────────────────────────────────────
+.env
+.env.*
+*.key
+!*.key.pub
+credentials.json

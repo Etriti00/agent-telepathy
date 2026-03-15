@@ -15,10 +15,8 @@ func TestIntentWireValues(t *testing.T) {
 	}{
 		{IntentHandshake, "Handshake"},
 		{IntentTaskRequest, "Task_Request"},
-		{IntentTaskResponse, "Task_Response"},
 		{IntentStateSync, "State_Sync"},
 		{IntentStateSyncVector, "State_Sync_Vector"},
-		{IntentMemorySync, "Memory_Sync"},
 		{IntentMediaShare, "Media_Share"},
 		{IntentCritique, "Critique"},
 		{IntentTerminate, "Terminate"},
@@ -151,5 +149,62 @@ func TestMessageHeaderJSONFields(t *testing.T) {
 	}
 	if _, ok := m["timestamp_ms"]; ok {
 		t.Error("MessageHeader JSON must not have \"timestamp_ms\" — should be \"timestamp\"")
+	}
+}
+
+// TestTPCPEnvelopeAckChunkJSON verifies that AckInfo and ChunkInfo survive
+// a JSON marshal/unmarshal round-trip on TPCPEnvelope.
+func TestTPCPEnvelopeAckChunkJSON(t *testing.T) {
+	env := TPCPEnvelope{
+		Header: MessageHeader{
+			MessageID:       "msg-ack-1",
+			Timestamp:       "2026-03-14T12:00:00Z",
+			SenderID:        "agent-a",
+			ReceiverID:      "agent-b",
+			Intent:          IntentACK,
+			TTL:             10,
+			ProtocolVersion: PROTOCOL_VERSION,
+		},
+		Payload: json.RawMessage(`{"payload_type":"text","content":"ok"}`),
+		AckInfo: &AckInfo{
+			AckedMessageID: "msg-original-42",
+		},
+		ChunkInfo: &ChunkInfo{
+			ChunkIndex:  2,
+			TotalChunks: 5,
+			TransferID:  "xfer-abc-123",
+		},
+	}
+
+	b, err := json.Marshal(env)
+	if err != nil {
+		t.Fatalf("marshal TPCPEnvelope: %v", err)
+	}
+
+	var decoded TPCPEnvelope
+	if err := json.Unmarshal(b, &decoded); err != nil {
+		t.Fatalf("unmarshal TPCPEnvelope: %v", err)
+	}
+
+	// Verify AckInfo round-trip
+	if decoded.AckInfo == nil {
+		t.Fatal("AckInfo is nil after round-trip")
+	}
+	if decoded.AckInfo.AckedMessageID != "msg-original-42" {
+		t.Errorf("AckInfo.AckedMessageID: got %q, want %q", decoded.AckInfo.AckedMessageID, "msg-original-42")
+	}
+
+	// Verify ChunkInfo round-trip
+	if decoded.ChunkInfo == nil {
+		t.Fatal("ChunkInfo is nil after round-trip")
+	}
+	if decoded.ChunkInfo.ChunkIndex != 2 {
+		t.Errorf("ChunkInfo.ChunkIndex: got %d, want %d", decoded.ChunkInfo.ChunkIndex, 2)
+	}
+	if decoded.ChunkInfo.TotalChunks != 5 {
+		t.Errorf("ChunkInfo.TotalChunks: got %d, want %d", decoded.ChunkInfo.TotalChunks, 5)
+	}
+	if decoded.ChunkInfo.TransferID != "xfer-abc-123" {
+		t.Errorf("ChunkInfo.TransferID: got %q, want %q", decoded.ChunkInfo.TransferID, "xfer-abc-123")
 	}
 }

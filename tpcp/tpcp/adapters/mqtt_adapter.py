@@ -31,7 +31,11 @@ import time
 from typing import Any, Callable, Dict, List, Optional
 from uuid import UUID
 
-import paho.mqtt.client as mqtt
+try:
+    import paho.mqtt.client as mqtt
+    MQTT_AVAILABLE = True
+except ImportError:
+    MQTT_AVAILABLE = False
 
 from tpcp.adapters.base import BaseFrameworkAdapter
 from tpcp.schemas.envelope import (
@@ -53,8 +57,13 @@ class MQTTAdapter(BaseFrameworkAdapter):
     into a TPCP swarm natively.
     """
 
-    def __init__(self, identity: AgentIdentity, broker_host: str, broker_port: int = 1883, 
+    def __init__(self, identity: AgentIdentity, broker_host: str, broker_port: int = 1883,
                  client_id: str = "tpcp_edge_bridge", identity_manager=None):
+        if not MQTT_AVAILABLE:
+            raise ImportError(
+                "paho-mqtt is required for MQTTAdapter. "
+                "Install it with: pip install tpcp-core[edge]"
+            )
         super().__init__(identity, identity_manager)
         self.broker_host = broker_host
         self.broker_port = broker_port
@@ -104,8 +113,10 @@ class MQTTAdapter(BaseFrameworkAdapter):
             protocol_version=PROTOCOL_VERSION
         )
 
-        signature_str = self.identity_manager.sign_payload(payload.model_dump())
-        return TPCPEnvelope(header=header, payload=payload, signature=signature_str)
+        envelope = TPCPEnvelope(header=header, payload=payload)
+        if self.identity_manager:
+            envelope.signature = self.identity_manager.sign_payload(payload.model_dump())
+        return envelope
 
     def unpack_request(self, envelope: TPCPEnvelope) -> Any:
         """

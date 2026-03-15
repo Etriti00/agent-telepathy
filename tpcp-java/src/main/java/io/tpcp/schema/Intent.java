@@ -9,10 +9,8 @@ import com.fasterxml.jackson.annotation.JsonValue;
 public enum Intent {
     HANDSHAKE("Handshake"),
     TASK_REQUEST("Task_Request"),
-    TASK_RESPONSE("Task_Response"),
     STATE_SYNC("State_Sync"),
     STATE_SYNC_VECTOR("State_Sync_Vector"),
-    MEMORY_SYNC("Memory_Sync"),
     MEDIA_SHARE("Media_Share"),
     CRITIQUE("Critique"),
     TERMINATE("Terminate"),
