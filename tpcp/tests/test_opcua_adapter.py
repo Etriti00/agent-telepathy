@@ -18,21 +18,17 @@ from tpcp.schemas.envelope import TelemetryPayload, BinaryPayload
 
 async def _build_server(url: str):
     """Spin up a minimal asyncua server, add one numeric and one bytes node."""
-    from asyncua.crypto.permission_rules import PermissionRuleset  # type: ignore
+    from asyncua.crypto.permission_rules import User, UserRole  # type: ignore
 
-    class _AllowAll(PermissionRuleset):
-        """Permissive ruleset for test servers: every operation is allowed."""
-        def check_validity(self, user, action_type_id, body):
-            return True
+    class _AdminUserManager:
+        """Grant every connecting client Admin role so AttributeService skips access-level checks."""
+        def get_user(self, iserver, username=None, password=None, certificate=None):
+            return User(role=UserRole.Admin)
 
-    server = OPCUAServer()
+    server = OPCUAServer(user_manager=_AdminUserManager())
     await server.init()
     server.set_endpoint(url)
-    # Pass _AllowAll so SecurityPolicyNone.permissions is set to a ruleset that
-    # always returns True, bypassing the default SimpleRoleRuleset RBAC check
-    # that denies anonymous-client writes.  asyncua.crypto.__init__ is empty
-    # so no crypto extras are required to import asyncua.crypto.permission_rules.
-    server.set_security_policy([ua.SecurityPolicyType.NoSecurity], permission_ruleset=_AllowAll())
+    server.set_security_policy([ua.SecurityPolicyType.NoSecurity])
     uri = "urn:tpcp:test"
     idx = await server.register_namespace(uri)
     objects = server.nodes.objects
