@@ -15,17 +15,22 @@ public class VideoPayload {
     @JsonProperty("mime_type")
     public String mimeType = "video/mp4";
 
+    @JsonProperty("width")
     public Integer width;
+
+    @JsonProperty("height")
     public Integer height;
 
     @JsonProperty("duration_seconds")
     public Double durationSeconds;
 
+    @JsonProperty("fps")
     public Double fps;
 
     @JsonProperty("source_model")
     public String sourceModel;
 
+    @JsonProperty("description")
     public String description;
 
     public VideoPayload() {}

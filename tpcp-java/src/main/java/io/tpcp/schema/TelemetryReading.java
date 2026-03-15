@@ -6,11 +6,13 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 /** Single sensor reading. */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class TelemetryReading {
+    @JsonProperty("value")
     public double value;
 
     @JsonProperty("timestamp_ms")
     public long timestampMs;
 
+    @JsonProperty("quality")
     public String quality;
 
     public TelemetryReading() {}

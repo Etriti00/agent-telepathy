@@ -15,8 +15,10 @@ public class BinaryPayload {
     @JsonProperty("mime_type")
     public String mimeType = "application/octet-stream";
 
+    @JsonProperty("filename")
     public String filename;
 
+    @JsonProperty("description")
     public String description;
 
     public BinaryPayload() {}

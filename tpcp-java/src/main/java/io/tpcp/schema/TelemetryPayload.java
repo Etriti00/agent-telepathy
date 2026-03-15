@@ -11,7 +11,10 @@ public class TelemetryPayload {
     @JsonProperty("sensor_id")
     public String sensorId;
 
+    @JsonProperty("unit")
     public String unit;
+
+    @JsonProperty("readings")
     public List<TelemetryReading> readings;
 
     @JsonProperty("source_protocol")

@@ -7,8 +7,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 /** Top-level TPCP message container. */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class TPCPEnvelope {
+    @JsonProperty("header")
     public MessageHeader header;
+
+    @JsonProperty("payload")
     public JsonNode payload;
+
+    @JsonProperty("signature")
     public String signature;
 
     @JsonProperty("ack_info")

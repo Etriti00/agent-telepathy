@@ -13,8 +13,10 @@ public class VectorEmbeddingPayload {
     @JsonProperty("model_id")
     public String modelId;
 
+    @JsonProperty("dimensions")
     public int dimensions;
 
+    @JsonProperty("vector")
     public List<Double> vector;
 
     @JsonProperty("raw_text_fallback")
