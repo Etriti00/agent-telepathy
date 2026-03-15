@@ -4,10 +4,9 @@ Tests for ADNSRelayServer (tpcp/tpcp/relay/server.py).
 Strategy: call the relay's internal async methods directly via mock WebSocket
 connections — no real network sockets required.
 """
-import asyncio
 import json
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 from tpcp.relay.server import ADNSRelayServer, TokenBucket, BROADCAST_ID
