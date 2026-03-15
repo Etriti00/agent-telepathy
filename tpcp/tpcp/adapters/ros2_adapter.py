@@ -26,7 +26,7 @@ Requires rclpy to be installed in the robot's environment.
 
 import base64
 import logging
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 from uuid import UUID
 
 from tpcp.adapters.base import BaseFrameworkAdapter
@@ -80,6 +80,7 @@ class ROS2Adapter(BaseFrameworkAdapter):
             protocol_version=PROTOCOL_VERSION
         )
 
+        payload: Union[CRDTSyncPayload, TextPayload]
         if isinstance(raw_output, dict) and "state" in raw_output:
             # It's a CRDT state sync
             self._tick()
@@ -182,6 +183,8 @@ class ROS2Adapter(BaseFrameworkAdapter):
     def _handle_ros_image(self, msg: 'ROSImage', callback: Callable[[TPCPEnvelope], None]):
         """Callback for ROS Image topics. Converts frames to base64 TPCP envelopes."""
         try:
+            if self._bridge is None:
+                return
             cv_image = self._bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
             target_id = UUID(int=0)  # Broadcast
             envelope = self.pack_image(target_id, cv_image, caption="Real-time optical frame from robot sensor")

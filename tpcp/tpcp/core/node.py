@@ -32,8 +32,9 @@ from typing import Dict, Optional, Callable, Awaitable, Tuple, Type
 from uuid import UUID
 
 import websockets
-from websockets.server import WebSocketServerProtocol
-from websockets.client import connect
+from websockets.asyncio.server import ServerConnection, Server as _WSServer
+from websockets.asyncio.client import ClientConnection
+from websockets import State as WsState
 from pydantic import ValidationError
 
 from tpcp.schemas.envelope import (
@@ -61,7 +62,7 @@ logger = logging.getLogger(__name__)
 BROADCAST_UUID = UUID("00000000-0000-0000-0000-000000000000")
 
 # Type alias for intent handlers
-IntentHandler = Callable[[TPCPEnvelope, WebSocketServerProtocol], Awaitable[None]]
+IntentHandler = Callable[[TPCPEnvelope, ServerConnection], Awaitable[None]]
 
 
 class TPCPNode:
@@ -96,7 +97,7 @@ class TPCPNode:
         self.ssl_context = ssl_context
         self.auto_ack = auto_ack
         self.acl_policy = acl_policy
-        self._adns_ws: Optional[websockets.client.WebSocketClientProtocol] = None
+        self._adns_ws: Optional[ClientConnection] = None
         self._adns_registered = False
         
         # Initialize or reuse cryptographic trust layer
@@ -113,7 +114,7 @@ class TPCPNode:
         self.peer_registry: Dict[UUID, Tuple[AgentIdentity, str]] = {}
         
         # Connection pool: cached WebSocket connections to peers
-        self._peer_connections: Dict[UUID, websockets.client.WebSocketClientProtocol] = {}
+        self._peer_connections: Dict[UUID, ClientConnection] = {}
         
         # Shared Semantic Memory — CRDT LWW-Map
         self.shared_memory = LWWMap(node_id=str(self.identity.agent_id))
@@ -140,7 +141,7 @@ class TPCPNode:
         self.register_handler(Intent.ACK, self._handle_ack)
         self.register_handler(Intent.NACK, self._handle_nack)
         
-        self._server: Optional[websockets.server.WebSocketServer] = None
+        self._server: Optional[_WSServer] = None
         self._running = False
 
     # ── ASYNC CONTEXT MANAGER ────────────────────────────────────────────
@@ -200,12 +201,13 @@ class TPCPNode:
         Connects to the global A-DNS Relay Server with exponential backoff.
         Handles challenge-response authentication before routing begins.
         """
+        assert self.adns_url is not None
         backoff = 1.0
         max_backoff = 60.0
 
         while self._running:
             try:
-                async with websockets.client.connect(self.adns_url, ssl=self.ssl_context) as ws:
+                async with websockets.connect(self.adns_url, ssl=self.ssl_context) as ws:
                     self._adns_ws = ws
                     self._adns_registered = False
                     logger.info(f"Connected to Global A-DNS Relay at {self.adns_url}")
@@ -216,7 +218,8 @@ class TPCPNode:
                     
                     # Listen for messages (including challenges)
                     async for message in ws:
-                        await self._process_adns_message(message, ws)
+                        text = message if isinstance(message, str) else message.decode("utf-8")
+                        await self._process_adns_message(text, ws)
             except Exception as e:
                 self._adns_ws = None
                 self._adns_registered = False
@@ -297,7 +300,7 @@ class TPCPNode:
             except Exception:
                 pass
 
-    async def _handle_connection(self, websocket: WebSocketServerProtocol, *args) -> None:
+    async def _handle_connection(self, websocket: ServerConnection) -> None:
         """Handle individual inbound WebSocket connections."""
         try:
             async for raw_message in websocket:
@@ -307,7 +310,7 @@ class TPCPNode:
         except Exception as e:
             logger.error(f"Error handling connection: {e}")
 
-    async def _process_inbound(self, raw_message: str | bytes, websocket: WebSocketServerProtocol) -> None:
+    async def _process_inbound(self, raw_message: str | bytes, websocket: ServerConnection) -> None:
         """
         Deserialize, enforce TTL, cryptographically verify, and route incoming messages.
         """
@@ -395,7 +398,7 @@ class TPCPNode:
         except Exception as e:
             logger.error(f"Failed to process inbound message: {e}")
 
-    async def _handle_handshake(self, envelope: TPCPEnvelope, websocket: WebSocketServerProtocol) -> None:
+    async def _handle_handshake(self, envelope: TPCPEnvelope, websocket: ServerConnection) -> None:
         """Auto-register handshake senders in the peer registry with signature verification."""
         logger.info(f"Handshake received from {envelope.header.sender_id}")
         
@@ -419,7 +422,7 @@ class TPCPNode:
             except (json.JSONDecodeError, Exception) as e:
                 logger.debug(f"Could not auto-register peer from handshake: {e}")
         
-    async def _handle_state_sync(self, envelope: TPCPEnvelope, websocket: WebSocketServerProtocol) -> None:
+    async def _handle_state_sync(self, envelope: TPCPEnvelope, websocket: ServerConnection) -> None:
         """Merge CRDTSyncPayloads into local shared memory."""
         if not isinstance(envelope.payload, CRDTSyncPayload):
             logger.error("STATE_SYNC envelope did not contain a CRDTSyncPayload.")
@@ -433,7 +436,7 @@ class TPCPNode:
         else:
             logger.warning(f"Unsupported CRDT type: {payload.crdt_type}")
 
-    async def _handle_vector_sync(self, envelope: TPCPEnvelope, websocket: WebSocketServerProtocol) -> None:
+    async def _handle_vector_sync(self, envelope: TPCPEnvelope, websocket: ServerConnection) -> None:
         """Ingest dense contextual vectors into the local VectorBank."""
         if not isinstance(envelope.payload, VectorEmbeddingPayload):
             logger.error("STATE_SYNC_VECTOR envelope lacked VectorEmbeddingPayload.")
@@ -601,11 +604,11 @@ class TPCPNode:
                     logger.warning(f"[Multicast:{tag}] Failed to dispatch to {peer_id}: {exc}")
         return dispatched
 
-    async def _get_peer_connection(self, target_id: UUID) -> Optional[websockets.client.WebSocketClientProtocol]:
+    async def _get_peer_connection(self, target_id: UUID) -> Optional[ClientConnection]:
         """Get or create a pooled WebSocket connection to a peer."""
         if target_id in self._peer_connections:
             ws = self._peer_connections[target_id]
-            if not ws.closed:
+            if ws.state == WsState.OPEN:
                 return ws
             # Stale, remove
             del self._peer_connections[target_id]
@@ -615,7 +618,7 @@ class TPCPNode:
         
         _, endpoint = self.peer_registry[target_id]
         try:
-            ws = await websockets.client.connect(endpoint, ssl=self.ssl_context)
+            ws = await websockets.connect(endpoint, ssl=self.ssl_context)
             self._peer_connections[target_id] = ws
             return ws
         except Exception:
@@ -654,7 +657,7 @@ class TPCPNode:
         
         while self._running and await self.message_queue.has_messages(target_id):
             try:
-                ws = await websockets.client.connect(endpoint, ssl=self.ssl_context)
+                ws = await websockets.connect(endpoint, ssl=self.ssl_context)
                 self._peer_connections[target_id] = ws
                 logger.info(f"[Network Restored] Draining DLQ for {target_id}...")
                     
@@ -702,7 +705,7 @@ class TPCPNode:
             logger.info(f"Broadcasting discovery to {len(seed_nodes)} seed nodes.")
             for address in seed_nodes:
                 try:
-                    async with connect(address, ssl=self.ssl_context) as websocket:
+                    async with websockets.connect(address, ssl=self.ssl_context) as websocket:
                         await websocket.send(serialized)
                         logger.debug(f"Sent discovery to {address}")
                 except Exception as e:

@@ -172,6 +172,7 @@ class ModbusAdapter(BaseFrameworkAdapter):
             write_cmd: Dict with "address", "value", and optional
                 "type" ("coil" or "holding", default "holding").
         """
+        assert self._client is not None
         cmd_type = write_cmd.get("type", "holding")
         address = int(write_cmd["address"])
         value = write_cmd["value"]
@@ -302,28 +303,32 @@ class ModbusAdapter(BaseFrameworkAdapter):
                     try:
                         read_ok = False
                         value = 0
+                        # Build unit kwarg as Dict[str, Any] so mypy accepts it
+                        # regardless of whether the installed pymodbus uses
+                        # device_id= (≥3.7) or slave= (3.6.x).
+                        _ukw: Dict[str, Any] = {_UNIT_KWARG: self.unit_id}
                         if register_type == "coil":
-                            result = await self._client.read_coils(address, count=1, **{_UNIT_KWARG: self.unit_id})
+                            result = await self._client.read_coils(address, count=1, **_ukw)
                             if result and not result.isError():
                                 value = result.bits[0]
                                 read_ok = True
                         elif register_type == "discrete":
                             result = await self._client.read_discrete_inputs(
-                                address, count=1, **{_UNIT_KWARG: self.unit_id}
+                                address, count=1, **_ukw
                             )
                             if result and not result.isError():
                                 value = result.bits[0]
                                 read_ok = True
                         elif register_type == "input":
                             result = await self._client.read_input_registers(
-                                address, count=1, **{_UNIT_KWARG: self.unit_id}
+                                address, count=1, **_ukw
                             )
                             if result and not result.isError():
                                 value = result.registers[0]
                                 read_ok = True
                         else:  # "holding" (default)
                             result = await self._client.read_holding_registers(
-                                address, count=1, **{_UNIT_KWARG: self.unit_id}
+                                address, count=1, **_ukw
                             )
                             if result and not result.isError():
                                 value = result.registers[0]

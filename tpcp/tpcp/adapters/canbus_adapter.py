@@ -206,26 +206,29 @@ class CANbusAdapter(BaseFrameworkAdapter):
         logger.info(
             f"[CANbusAdapter] Opened {self.interface}/{self.channel} at {self.bitrate} bps"
         )
+        # Capture bus reference so the thread function has a non-Optional handle
+        bus = self._bus
+        assert bus is not None
 
         def _can_reader_thread() -> None:
             """Background thread: blocking CAN recv loop bridged to asyncio."""
             while self._running:
                 try:
-                    msg = self._bus.recv(timeout=1.0)
+                    msg = bus.recv(timeout=1.0)
                     if msg is None:
                         continue
                     if can_ids is not None and msg.arbitration_id not in can_ids:
                         continue
                     # Bridge from OS thread to asyncio event loop
-                    loop.call_soon_threadsafe(
-                        lambda m=msg: asyncio.ensure_future(
+                    def _deliver(m: Any = msg) -> None:
+                        asyncio.ensure_future(
                             self._dispatch_frame(m, callback, effective_target)
                         )
-                    )
+                    loop.call_soon_threadsafe(_deliver)
                 except Exception as exc:
-                    loop.call_soon_threadsafe(
-                        lambda e=exc: logger.error("[CANbusAdapter] CAN read error: %s", e)
-                    )
+                    def _log_err(e: Any = exc) -> None:
+                        logger.error("[CANbusAdapter] CAN read error: %s", e)
+                    loop.call_soon_threadsafe(_log_err)
 
         self._reader_thread = threading.Thread(
             target=_can_reader_thread, daemon=True, name="canbus-reader"

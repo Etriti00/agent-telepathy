@@ -32,7 +32,9 @@ import logging
 from typing import Dict, Optional
 
 import websockets
-from websockets.server import WebSocketServerProtocol
+from websockets.asyncio.server import ServerConnection
+from websockets.datastructures import Headers
+from websockets.http11 import Request, Response as HTTPResponse
 
 BROADCAST_ID = "00000000-0000-0000-0000-000000000000"
 
@@ -95,7 +97,7 @@ class ADNSRelayServer:
         # Rate limiters per connection
         self._rate_limiters: Dict[int, TokenBucket] = {}
 
-    async def _handle_connection(self, websocket: WebSocketServerProtocol, *args) -> None:
+    async def _handle_connection(self, websocket: ServerConnection) -> None:
         agent_id = None
         ws_id = id(websocket)
         self._rate_limiters[ws_id] = TokenBucket(self.rate_limit, self.burst_limit)
@@ -197,7 +199,7 @@ class ADNSRelayServer:
             for aid in agents_to_clean:
                 del self._pending_challenges[aid]
 
-    async def _initiate_challenge(self, sender_id: str, data: dict, websocket: WebSocketServerProtocol) -> None:
+    async def _initiate_challenge(self, sender_id: str, data: dict, websocket: ServerConnection) -> None:
         """
         Generate a random nonce and challenge the connecting node to prove identity.
         The node must sign the nonce with their private key and return it.
@@ -242,7 +244,7 @@ class ADNSRelayServer:
             if sender_id in self._pending_challenges:
                 del self._pending_challenges[sender_id]
 
-    async def _handle_challenge_response(self, sender_id: str, data: dict, websocket: WebSocketServerProtocol) -> None:
+    async def _handle_challenge_response(self, sender_id: str, data: dict, websocket: ServerConnection) -> None:
         """Verify the signed nonce from the node to complete registration."""
         if sender_id not in self._pending_challenges:
             logger.warning(f"Unexpected challenge response from {sender_id}. Ignoring.")
@@ -282,21 +284,21 @@ class ADNSRelayServer:
             del self._pending_challenges[sender_id]
             await websocket.close(1008, "Challenge verification failed")
 
-    async def _process_request(self, path: str, request_headers) -> Optional[tuple]:
+    async def _process_request(self, connection: ServerConnection, request: Request) -> Optional[HTTPResponse]:
         """Handle HTTP requests before WebSocket upgrade.
-        Returns a (status, headers, body) tuple for HTTP-only paths, or None to continue
+        Returns an HTTPResponse for HTTP-only paths, or None to continue
         with WebSocket upgrade.
         """
-        if path == "/health":
+        if request.path == "/health":
             body = json.dumps({
                 "status": "ok",
                 "registered_nodes": len(self.registry),
             }).encode("utf-8")
-            headers = [
+            headers = Headers([
                 ("Content-Type", "application/json"),
                 ("Content-Length", str(len(body))),
-            ]
-            return http.HTTPStatus.OK, headers, body
+            ])
+            return HTTPResponse(200, "OK", headers, body)
         return None
 
     async def start(self) -> None:
