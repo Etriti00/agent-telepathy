@@ -282,7 +282,7 @@ TPCP v0.4.0 ships bridge adapters for the following industrial and IoT protocols
 |---|---|---|---|
 | OPC-UA | `asyncua` | `OPCUAAdapter` | Factory automation, SCADA |
 | Modbus TCP | `pymodbus` | `ModbusAdapter` | PLC register polling |
-| CANbus | `python-can` | `CANAdapter` | Automotive, robotics |
+| CANbus | `python-can` | `CANbusAdapter` | Automotive, robotics |
 | MQTT | `paho-mqtt` | `MQTTAdapter` | IoT sensor hubs |
 | HomeAssistant | SSE (`aiohttp`) | `HomeAssistantAdapter` | Smart home state events |
 | ROS2 | `rclpy` | `ROS2Adapter` | Mobile robotics, drones |

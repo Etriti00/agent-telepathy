@@ -51,7 +51,7 @@ crdt = LWWMap(node_id="agent-1", db_path=Path(".tpcp/memory.db"))
 
 ## 3. Multimodal Communication
 
-TPCP doesn't limit agents to text. The protocol supports **seven payload types** covering every modality:
+TPCP doesn't limit agents to text. The protocol supports **eight payload types** covering every modality:
 
 | Payload Type | Use Case | Example Models |
 |:-------------|:---------|:---------------|
@@ -62,6 +62,7 @@ TPCP doesn't limit agents to text. The protocol supports **seven payload types**
 | `AudioPayload` | Voice recordings, TTS output, music | Whisper, ElevenLabs, OpenAI TTS |
 | `VideoPayload` | Screen recordings, generated video | Sora, Runway Gen-3, Gemini Video |
 | `BinaryPayload` | PDFs, datasets, 3D models, any file | Any agent |
+| `TelemetryPayload` | Industrial sensor readings from OPC-UA, Modbus, CANbus, MQTT | OPCUAAdapter, ModbusAdapter, CANbusAdapter |
 
 ### Cross-Modal Fallbacks
 
