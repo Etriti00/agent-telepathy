@@ -6,7 +6,7 @@ Thank you for your interest in contributing to TPCP! This guide will get you set
 
 ```bash
 # Clone the repo
-git clone https://github.com/YourUsername/tpcp.git
+git clone https://github.com/Etriti00/agent-telepathy.git
 cd tpcp/tpcp
 
 # Create a virtual environment and install dev dependencies

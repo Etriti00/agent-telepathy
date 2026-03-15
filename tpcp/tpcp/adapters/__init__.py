@@ -41,6 +41,25 @@ try:
 except ImportError:
     pass
 
+# Edge adapters — guarded by library availability
+try:
+    from .mqtt_adapter import MQTTAdapter  # noqa: F401
+    __all__.append("MQTTAdapter")
+except ImportError:
+    pass
+
+try:
+    from .homeassistant_adapter import HomeAssistantAdapter  # noqa: F401
+    __all__.append("HomeAssistantAdapter")
+except ImportError:
+    pass
+
+try:
+    from .ros2_adapter import ROS2Adapter  # noqa: F401
+    __all__.append("ROS2Adapter")
+except ImportError:
+    pass
+
 # AI framework adapters — guarded by library availability
 try:
     from .autogen_adapter import AutoGenAdapter  # noqa: F401

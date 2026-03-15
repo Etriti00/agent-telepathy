@@ -4,7 +4,8 @@
 
 | Version | Supported |
 |---------|-----------|
-| 0.3.x   | ✅ Active  |
+| 0.4.x   | ✅ Active  |
+| 0.3.x   | ⚠️ Security fixes only |
 | < 0.3.0 | ❌ End of life |
 
 ## Reporting a Vulnerability

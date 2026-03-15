@@ -137,6 +137,8 @@ impl TPCPNode {
             },
             payload,
             signature,
+            ack_info: None,
+            chunk_info: None,
         };
         let text = serde_json::to_string(&envelope)?;
         ws_stream.send(Message::Text(text.into())).await?;

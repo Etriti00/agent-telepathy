@@ -1,5 +1,5 @@
 # TPCP A-DNS Relay Server
-# Usage: docker build -t tpcp-relay . && docker run -p 9000:9000 tpcp-relay
+# Usage: docker build -t tpcp-relay . && docker run -p 8765:8765 tpcp-relay
 
 FROM python:3.11-slim
 
@@ -11,7 +11,9 @@ COPY tpcp/ ./tpcp/
 
 RUN pip install --no-cache-dir -e .
 
-EXPOSE 9000
+EXPOSE 8765
+
+ENV TPCP_PORT=8765
 
 # Run the A-DNS relay server
 CMD ["python", "-m", "tpcp.relay.server"]

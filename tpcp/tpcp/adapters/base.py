@@ -18,7 +18,7 @@
 
 import threading
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Optional
 from uuid import UUID
 
 from tpcp.schemas.envelope import TPCPEnvelope, Intent, AgentIdentity, MessageHeader, PROTOCOL_VERSION
@@ -30,7 +30,7 @@ class BaseFrameworkAdapter(ABC):
     and translating their native outputs into standardised TPCP envelopes.
     """
 
-    def __init__(self, agent_identity: AgentIdentity, identity_manager=None):
+    def __init__(self, agent_identity: AgentIdentity, identity_manager: Optional[Any] = None):
         self.identity = agent_identity
         self.identity_manager = identity_manager
         self._logical_clock: int = 0

@@ -2,9 +2,9 @@
 # Usage: docker-compose up
 #
 # Starts:
-#   - adns-relay: Global A-DNS discovery relay (port 9000)
+#   - adns-relay: Global A-DNS discovery relay (port 8765)
 #
-# Your Python/TypeScript agents connect to ws://localhost:9000
+# Your Python/TypeScript agents connect to ws://localhost:8765
 
 version: "3.9"
 
@@ -15,7 +15,7 @@ services:
       dockerfile: Dockerfile
     container_name: tpcp-adns-relay
     ports:
-      - "9000:9000"
+      - "8765:8765"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import websockets; print('ok')"]

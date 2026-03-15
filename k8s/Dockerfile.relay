@@ -5,8 +5,8 @@ WORKDIR /app
 # Copy the tpcp package
 COPY tpcp/ ./tpcp/
 
-# Install with relay extras
-RUN cd tpcp && pip install --no-cache-dir -e ".[relay]"
+# Install core package (no extras needed for relay)
+RUN cd tpcp && pip install --no-cache-dir -e .
 
 EXPOSE 8765
 

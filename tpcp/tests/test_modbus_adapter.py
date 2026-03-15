@@ -33,7 +33,8 @@ async def _start_server(host: str, port: int):
         ir=ModbusSequentialDataBlock(0, [0] * 100),
     )
     context = ModbusServerContext(devices=store, single=True)
-    task = asyncio.get_event_loop().create_task(
+    loop = asyncio.get_running_loop()
+    task = loop.create_task(
         StartAsyncTcpServer(context=context, address=(host, port))
     )
     await asyncio.sleep(0.3)
