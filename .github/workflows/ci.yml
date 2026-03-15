@@ -9,12 +9,15 @@ on:
 jobs:
   python-tests:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.11'
+        python-version: ${{ matrix.python-version }}
         cache: 'pip'
         cache-dependency-path: 'tpcp/pyproject.toml'
     - name: Install dependencies
@@ -33,12 +36,15 @@ jobs:
 
   industrial-adapters:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.11'
+        python-version: ${{ matrix.python-version }}
         cache: 'pip'
         cache-dependency-path: 'tpcp/pyproject.toml'
     - name: Install core + industrial extras
@@ -124,12 +130,15 @@ jobs:
 
   typescript-tests:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ['18', '20']
     steps:
     - uses: actions/checkout@v4
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: ${{ matrix.node-version }}
         cache: 'npm'
         cache-dependency-path: 'tpcp-ts/package-lock.json'
     - name: Set up Python for cross-language fixture
