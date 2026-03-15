@@ -10,6 +10,7 @@ COPY pyproject.toml README.md ./
 COPY tpcp/ ./tpcp/
 
 RUN pip install --no-cache-dir -e . && \
+    pip install --no-cache-dir --upgrade "wheel>=0.46.2" "jaraco.context>=6.1.0" && \
     useradd -r -u 1001 -g root tpcp
 
 USER tpcp
