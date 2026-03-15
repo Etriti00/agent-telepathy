@@ -282,7 +282,7 @@ TPCP v0.4.0 ships bridge adapters for the following industrial and IoT protocols
 |---|---|---|---|
 | OPC-UA | `asyncua` | `OPCUAAdapter` | Factory automation, SCADA |
 | Modbus TCP | `pymodbus` | `ModbusAdapter` | PLC register polling |
-| CANbus | `python-can` | `CANAdapter` | Automotive, robotics |
+| CANbus | `python-can` | `CANbusAdapter` | Automotive, robotics |
 | MQTT | `paho-mqtt` | `MQTTAdapter` | IoT sensor hubs |
 | HomeAssistant | SSE (`aiohttp`) | `HomeAssistantAdapter` | Smart home state events |
 | ROS2 | `rclpy` | `ROS2Adapter` | Mobile robotics, drones |
@@ -363,6 +363,24 @@ Messages that cannot be delivered immediately (receiver offline or not yet regis
 - On capacity exceeded: oldest messages are evicted (FIFO drop).
 - Auto-drain: when a peer reconnects and completes the challenge-response, the relay immediately begins draining its DLQ.
 - DLQ entries are not persisted across relay restarts by default; a persistent relay MAY use a database backend for durability.
+
+### 9.4 Starting the Relay
+
+The A-DNS relay is shipped as a Python module, not as a `tpcp relay` CLI subcommand. Start it with:
+
+```bash
+python -m tpcp.relay.server
+```
+
+Optional environment variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `TPCP_RELAY_HOST` | `0.0.0.0` | Bind address for the WebSocket server. |
+| `TPCP_RELAY_PORT` | `8765` | Listening port. |
+| `TPCP_RELAY_STRICT` | `false` | When `true`, unsigned envelopes are rejected. |
+
+There is no `tpcp relay start` CLI subcommand; invoking `python -m tpcp.relay.server` is the only supported method.
 
 ---
 

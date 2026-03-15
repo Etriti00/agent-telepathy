@@ -20,7 +20,7 @@
 
 import { EventEmitter } from 'events';
 import WebSocket from 'ws';
-import * as crypto from 'crypto';
+
 import { 
   AgentIdentity, 
   TPCPEnvelope, 
@@ -150,7 +150,7 @@ export class TPCPNode extends EventEmitter {
   private _server?: WebSocket.Server;
   private _adnsWs?: WebSocket;
   private _adnsRegistered: boolean = false;
-  private _running: boolean = false;
+  protected _running: boolean = false;
   private _peerConnections: Map<string, WebSocket> = new Map();
 
   constructor(identity: AgentIdentity, host: string = "127.0.0.1", port: number = 8000, adnsUrl?: string) {
@@ -215,7 +215,7 @@ export class TPCPNode extends EventEmitter {
     }
   }
 
-  private _connectToADNS(): void {
+  protected _connectToADNS(): void {
     if (!this.adnsUrl || !this._running) return;
 
     let backoff = 1000;
@@ -336,6 +336,11 @@ export class TPCPNode extends EventEmitter {
       case Intent.STATE_SYNC_VECTOR:
         this._handleVectorSync(envelope);
         break;
+      default:
+        // ACK, NACK, BROADCAST, TASK_REQUEST, CRITIQUE, TERMINATE
+        // forwarded to user-registered handlers via EventEmitter
+        this.emit('message', envelope);
+        break;
     }
   }
 
@@ -403,7 +408,7 @@ export class TPCPNode extends EventEmitter {
 
   public async sendMessage(targetId: string, intent: Intent, payload: Record<string, any>): Promise<void> {
     const header: MessageHeader = {
-      message_id: crypto.randomUUID(),
+      message_id: globalThis.crypto.randomUUID(),
       timestamp: new Date().toISOString(),
       sender_id: this.identity.agent_id,
       receiver_id: targetId,
@@ -491,7 +496,7 @@ export class TPCPNode extends EventEmitter {
   public async broadcastDiscovery(seedNodes: string[] = []): Promise<void> {
     const targetId = "00000000-0000-0000-0000-000000000000";
     const header: MessageHeader = {
-      message_id: crypto.randomUUID(),
+      message_id: globalThis.crypto.randomUUID(),
       timestamp: new Date().toISOString(),
       sender_id: this.identity.agent_id,
       receiver_id: targetId,

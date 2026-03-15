@@ -15,12 +15,16 @@ public class ImagePayload {
     @JsonProperty("mime_type")
     public String mimeType = "image/png";
 
+    @JsonProperty("width")
     public Integer width;
+
+    @JsonProperty("height")
     public Integer height;
 
     @JsonProperty("source_model")
     public String sourceModel;
 
+    @JsonProperty("caption")
     public String caption;
 
     public ImagePayload() {}

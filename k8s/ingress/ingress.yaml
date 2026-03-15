@@ -18,6 +18,9 @@ metadata:
       proxy_set_header Upgrade $http_upgrade;
       proxy_set_header Connection "Upgrade";
     cert-manager.io/cluster-issuer: letsencrypt-prod
+    # TLS hardening — reject TLS 1.0 and 1.1
+    nginx.ingress.kubernetes.io/ssl-protocols: "TLSv1.2 TLSv1.3"
+    nginx.ingress.kubernetes.io/ssl-ciphers: "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384"
 spec:
   tls:
     - hosts:

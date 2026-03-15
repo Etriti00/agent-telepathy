@@ -100,6 +100,14 @@ class ChunkReassembler:
 
         chunk_bytes = base64.b64decode(envelope.payload.data_base64)
 
+        # Reject out-of-bounds chunks from malicious or buggy peers.
+        if chunk_index < 0 or chunk_index >= total_chunks:
+            logger.warning(
+                f"[Reassembler] Chunk index {chunk_index} out of range "
+                f"[0, {total_chunks}) for {transfer_id} — dropping"
+            )
+            return None
+
         # Reject duplicate chunks — same index already received for this transfer.
         if chunk_index in self._received_indices[transfer_id]:
             logger.debug(

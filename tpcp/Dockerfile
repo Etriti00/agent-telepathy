@@ -9,7 +9,11 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY tpcp/ ./tpcp/
 
-RUN pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir --upgrade pip wheel jaraco.context && \
+    pip install --no-cache-dir -e . && \
+    useradd -r -u 1001 -g root tpcp
+
+USER tpcp
 
 EXPOSE 8765
 

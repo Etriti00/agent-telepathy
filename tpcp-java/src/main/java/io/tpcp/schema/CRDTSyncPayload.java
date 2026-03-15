@@ -11,14 +11,15 @@ public class CRDTSyncPayload {
     @JsonProperty("crdt_type")
     public String crdtType;
 
+    @JsonProperty("state")
     public Map<String, Object> state;
 
     @JsonProperty("vector_clock")
-    public Map<String, Integer> vectorClock;
+    public Map<String, Long> vectorClock;
 
     public CRDTSyncPayload() {}
 
-    public CRDTSyncPayload(String crdtType, Map<String, Object> state, Map<String, Integer> vectorClock) {
+    public CRDTSyncPayload(String crdtType, Map<String, Object> state, Map<String, Long> vectorClock) {
         this.crdtType = crdtType;
         this.state = state;
         this.vectorClock = vectorClock;

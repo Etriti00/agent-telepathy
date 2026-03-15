@@ -361,7 +361,7 @@ The Universal Edge modules securely bridge the physical world to the swarm and r
 
 | Method | Description |
 |:-------|:------------|
-| `__init__(identity, host, port, adns_url, identity_manager, key_path, auto_save_key)` | Create a node with optional key persistence and A-DNS |
+| `__init__(identity, host, port, adns_url, identity_manager, key_path, auto_save_key, ssl_context, auto_ack, acl_policy)` | Create a node with optional TLS, auto-ACK, access control, and key persistence |
 | `async start_listening()` | Start WebSocket server and A-DNS connection |
 | `async stop_listening()` | Graceful shutdown of all connections |
 | `register_peer(identity, address)` | Add a peer to the routing table |
@@ -412,6 +412,9 @@ The Universal Edge modules securely bridge the physical world to the swarm and r
 | `MEDIA_SHARE` | Image, audio, video, or binary data sharing |
 | `CRITIQUE` | Feedback on another agent's output |
 | `TERMINATE` | Signal graceful shutdown |
+| `ACK` | Acknowledge successful receipt of a message |
+| `NACK` | Negative acknowledgement — delivery failed |
+| `BROADCAST` | Fan-out message to all registered peers via relay |
 
 ### Payload Types
 
@@ -424,3 +427,4 @@ The Universal Edge modules securely bridge the physical world to the swarm and r
 | `AudioPayload` | `data_base64`, `mime_type`, `sample_rate`, `duration_seconds`, `source_model` | `transcript` |
 | `VideoPayload` | `data_base64`, `mime_type`, `width`, `height`, `duration_seconds`, `fps`, `source_model` | `description` |
 | `BinaryPayload` | `data_base64`, `mime_type`, `filename` | `description` |
+| `TelemetryPayload` | `sensor_id`, `unit`, `readings` (list of `TelemetryReading`), `source_protocol` | — |

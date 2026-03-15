@@ -18,6 +18,16 @@ jobs:
         node-version: '20'
         registry-url: 'https://registry.npmjs.org'
 
+    - name: Set up Python (required for cross-language fixture test)
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install Python tpcp package
+      run: |
+        cd tpcp
+        pip install -e .
+
     - name: Install dependencies
       run: |
         cd tpcp-ts
@@ -28,10 +38,10 @@ jobs:
         cd tpcp-ts
         npm run build
 
-    - name: Run tests
+    - name: Run full test suite (including cross-language)
       run: |
         cd tpcp-ts
-        npm test -- --testPathIgnorePatterns="cross_language"
+        npm test
 
     - name: Publish to npm
       run: |

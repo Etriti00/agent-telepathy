@@ -24,6 +24,7 @@ public class AudioPayload {
     @JsonProperty("source_model")
     public String sourceModel;
 
+    @JsonProperty("transcript")
     public String transcript;
 
     public AudioPayload() {}

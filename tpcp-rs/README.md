@@ -24,8 +24,10 @@ use tpcp_std::{TPCPNode, AgentIdentity, Intent};
 async fn main() {
     let identity = AgentIdentity {
         agent_id: "my-agent".into(),
-        agent_type: "rust-agent".into(),
-        public_key_b64: "".into(),
+        framework: "rust-agent".into(),
+        public_key: "".into(),
+        capabilities: vec![],
+        modality: vec!["text".into()],
     };
     let node = TPCPNode::new(identity);
     node.register_handler(Intent::TaskRequest, |env| {

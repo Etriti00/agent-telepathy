@@ -70,16 +70,16 @@ class HomeAssistantAdapter(BaseFrameworkAdapter):
             )
         super().__init__(identity, identity_manager)
         self.ha_url = ha_url.rstrip("/")
-        self.headers = {
-            "Authorization": f"Bearer {ha_token}",
-            "Content-Type": "application/json"
-        }
+        self._ha_token = ha_token
         self._session: Optional[aiohttp.ClientSession] = None
         self._listening_task: Optional[asyncio.Task] = None
 
     async def _get_session(self) -> aiohttp.ClientSession:
         if not self._session or self._session.closed:
-            self._session = aiohttp.ClientSession(headers=self.headers)
+            self._session = aiohttp.ClientSession(headers={
+                "Authorization": f"Bearer {self._ha_token}",
+                "Content-Type": "application/json",
+            })
         return self._session
 
     def pack_thought(self, target_id: UUID, raw_output: Dict[str, Any], intent: Intent = Intent.STATE_SYNC) -> TPCPEnvelope:
@@ -171,8 +171,11 @@ class HomeAssistantAdapter(BaseFrameworkAdapter):
             while True:
                 try:
                     async with session.get(url) as resp:
-                        async for line in resp.content:
-                            decoded = line.decode('utf-8').strip()
+                        while True:
+                            raw_line = await resp.content.readline()
+                            if not raw_line:
+                                break
+                            decoded = raw_line.decode('utf-8').strip()
                             if decoded.startswith('data: '):
                                 raw_json = decoded[6:]
                                 if raw_json == "ping":

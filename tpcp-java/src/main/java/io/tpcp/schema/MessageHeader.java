@@ -20,6 +20,7 @@ public class MessageHeader {
     @JsonProperty("receiver_id")
     public String receiverId;
 
+    @JsonProperty("intent")
     public Intent intent;
 
     /** Time-to-live in hops to prevent routing loops. */

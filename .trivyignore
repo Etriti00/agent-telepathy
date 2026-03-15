@@ -1,0 +1,11 @@
+# Trivy ignore file — CVEs acknowledged and mitigated
+#
+# CVE-2026-23949: jaraco.context path traversal
+#   Mitigated: pip install --upgrade pip jaraco.context in Dockerfile
+#   Remaining exposure: pip's internal vendor bundle (not user-accessible code path)
+CVE-2026-23949
+
+# CVE-2026-24049: wheel privilege escalation via malicious wheel file
+#   Mitigated: pip install --upgrade pip wheel in Dockerfile
+#   Remaining exposure: pip's internal vendor bundle
+CVE-2026-24049

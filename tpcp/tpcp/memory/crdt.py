@@ -120,7 +120,7 @@ class LWWMap:
                     self._state[key] = (value, timestamp, writer_id)
                     updated = True
                 elif writer_id == existing_writer:
-                    if str(value) > str(existing_value):
+                    if json.dumps(value, sort_keys=True, default=str) > json.dumps(existing_value, sort_keys=True, default=str):
                         self._state[key] = (value, timestamp, writer_id)
                         updated = True
         else:

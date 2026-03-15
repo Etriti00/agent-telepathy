@@ -7,8 +7,10 @@ public class TextPayload {
     @JsonProperty("payload_type")
     public String payloadType = "text";
 
+    @JsonProperty("content")
     public String content;
 
+    @JsonProperty("language")
     public String language = "en";
 
     public TextPayload() {}
