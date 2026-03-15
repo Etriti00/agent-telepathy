@@ -32,12 +32,15 @@ from typing import Dict, Optional, Callable, Awaitable, Tuple, Type
 from uuid import UUID
 
 import websockets
-from websockets.server import WebSocketServerProtocol
-from websockets.client import connect
+from websockets.asyncio.server import ServerConnection, Server as _WSServer
+from websockets.asyncio.client import ClientConnection
+from websockets import State as WsState
 from pydantic import ValidationError
 
 from tpcp.schemas.envelope import (
     AgentIdentity,
+    AckInfo,
+    ChunkInfo,
     TPCPEnvelope,
     MessageHeader,
     Intent,
@@ -50,12 +53,16 @@ from tpcp.schemas.envelope import (
 from tpcp.memory.crdt import LWWMap
 from tpcp.memory.vector import VectorBank
 from tpcp.security.crypto import AgentIdentityManager
+from tpcp.security.acl import ACLPolicy
 from tpcp.core.queue import MessageQueue
 
 logger = logging.getLogger(__name__)
 
+# Nil UUID used as the broadcast address per the TPCP broadcast convention
+BROADCAST_UUID = UUID("00000000-0000-0000-0000-000000000000")
+
 # Type alias for intent handlers
-IntentHandler = Callable[[TPCPEnvelope, WebSocketServerProtocol], Awaitable[None]]
+IntentHandler = Callable[[TPCPEnvelope, ServerConnection], Awaitable[None]]
 
 
 class TPCPNode:
@@ -71,22 +78,26 @@ class TPCPNode:
     """
 
     def __init__(
-        self, 
-        identity: AgentIdentity, 
-        host: str = "127.0.0.1", 
-        port: int = 8000, 
+        self,
+        identity: AgentIdentity,
+        host: str = "127.0.0.1",
+        port: int = 8000,
         adns_url: Optional[str] = None,
         identity_manager: Optional[AgentIdentityManager] = None,
         key_path: Optional[Path] = None,
         auto_save_key: bool = False,
-        ssl_context: Optional[ssl.SSLContext] = None
+        ssl_context: Optional[ssl.SSLContext] = None,
+        auto_ack: bool = False,
+        acl_policy: Optional[ACLPolicy] = None
     ):
         self.identity = identity
         self.host = host
         self.port = port
         self.adns_url = adns_url
         self.ssl_context = ssl_context
-        self._adns_ws: Optional[websockets.client.WebSocketClientProtocol] = None
+        self.auto_ack = auto_ack
+        self.acl_policy = acl_policy
+        self._adns_ws: Optional[ClientConnection] = None
         self._adns_registered = False
         
         # Initialize or reuse cryptographic trust layer
@@ -103,7 +114,7 @@ class TPCPNode:
         self.peer_registry: Dict[UUID, Tuple[AgentIdentity, str]] = {}
         
         # Connection pool: cached WebSocket connections to peers
-        self._peer_connections: Dict[UUID, websockets.client.WebSocketClientProtocol] = {}
+        self._peer_connections: Dict[UUID, ClientConnection] = {}
         
         # Shared Semantic Memory — CRDT LWW-Map
         self.shared_memory = LWWMap(node_id=str(self.identity.agent_id))
@@ -117,15 +128,20 @@ class TPCPNode:
         # Deduplication Cache (Replay protection)
         self._seen_messages: Dict[UUID, float] = {}
 
+        # Pending ACK futures: maps message_id to Future waiting for ACK/NACK
+        self._pending_acks: Dict[UUID, asyncio.Future] = {}
+
         # Intent routing table
         self.handlers: Dict[Intent, IntentHandler] = {}
-        
+
         # Register internal default handlers
         self.register_handler(Intent.HANDSHAKE, self._handle_handshake)
         self.register_handler(Intent.STATE_SYNC, self._handle_state_sync)
         self.register_handler(Intent.STATE_SYNC_VECTOR, self._handle_vector_sync)
+        self.register_handler(Intent.ACK, self._handle_ack)
+        self.register_handler(Intent.NACK, self._handle_nack)
         
-        self._server: Optional[websockets.server.WebSocketServer] = None
+        self._server: Optional[_WSServer] = None
         self._running = False
 
     # ── ASYNC CONTEXT MANAGER ────────────────────────────────────────────
@@ -185,12 +201,13 @@ class TPCPNode:
         Connects to the global A-DNS Relay Server with exponential backoff.
         Handles challenge-response authentication before routing begins.
         """
+        assert self.adns_url is not None
         backoff = 1.0
         max_backoff = 60.0
 
         while self._running:
             try:
-                async with websockets.client.connect(self.adns_url, ssl=self.ssl_context) as ws:
+                async with websockets.connect(self.adns_url, ssl=self.ssl_context) as ws:
                     self._adns_ws = ws
                     self._adns_registered = False
                     logger.info(f"Connected to Global A-DNS Relay at {self.adns_url}")
@@ -201,7 +218,8 @@ class TPCPNode:
                     
                     # Listen for messages (including challenges)
                     async for message in ws:
-                        await self._process_adns_message(message, ws)
+                        text = message if isinstance(message, str) else message.decode("utf-8")
+                        await self._process_adns_message(text, ws)
             except Exception as e:
                 self._adns_ws = None
                 self._adns_registered = False
@@ -218,7 +236,7 @@ class TPCPNode:
             # Handle A-DNS challenge
             if data.get("type") == "ADNS_CHALLENGE":
                 nonce = data.get("nonce", "")
-                logger.info(f"Received A-DNS challenge. Signing nonce...")
+                logger.info("Received A-DNS challenge. Signing nonce...")
                 
                 # Sign the nonce with our private key
                 nonce_bytes = nonce.encode('utf-8')
@@ -255,7 +273,13 @@ class TPCPNode:
     async def stop_listening(self) -> None:
         """Stop the WebSocket server gracefully and close all connections."""
         self._running = False
-        
+
+        # Cancel all pending ACK futures
+        for fut in list(self._pending_acks.values()):
+            if not fut.done():
+                fut.cancel()
+        self._pending_acks.clear()
+
         # Close all cached peer connections
         for uid, ws in list(self._peer_connections.items()):
             try:
@@ -276,7 +300,7 @@ class TPCPNode:
             except Exception:
                 pass
 
-    async def _handle_connection(self, websocket: WebSocketServerProtocol, *args) -> None:
+    async def _handle_connection(self, websocket: ServerConnection) -> None:
         """Handle individual inbound WebSocket connections."""
         try:
             async for raw_message in websocket:
@@ -286,7 +310,7 @@ class TPCPNode:
         except Exception as e:
             logger.error(f"Error handling connection: {e}")
 
-    async def _process_inbound(self, raw_message: str | bytes, websocket: WebSocketServerProtocol) -> None:
+    async def _process_inbound(self, raw_message: str | bytes, websocket: ServerConnection) -> None:
         """
         Deserialize, enforce TTL, cryptographically verify, and route incoming messages.
         """
@@ -337,11 +361,33 @@ class TPCPNode:
                     logger.warning(f"INVALID SIGNATURE from {sender_id}. Dropping packet.")
                     return
             # ────────────────────────────────────────────────────────────────
-            
+
+            # ── ACL CHECK ────────────────────────────────────────────────────
+            if self.acl_policy is not None:
+                if not self.acl_policy.is_allowed(envelope.header.sender_id, envelope.header.intent):
+                    logger.warning(
+                        f"ACL DENIED: {envelope.header.sender_id} attempted to send "
+                        f"{envelope.header.intent} but is not permitted."
+                    )
+                    if self.auto_ack:
+                        nack = self._create_nack_envelope(envelope, "ACL denied")
+                        await self._dispatch_envelope(envelope.header.sender_id, nack)
+                    return
+            # ────────────────────────────────────────────────────────────────
+
             # Dispatch to handler
             handler = self.handlers.get(envelope.header.intent)
             if handler:
-                await handler(envelope, websocket)
+                try:
+                    await handler(envelope, websocket)
+                    if self.auto_ack and envelope.header.intent not in (Intent.ACK, Intent.NACK):
+                        ack_envelope = self._create_ack_envelope(envelope)
+                        await self._dispatch_envelope(envelope.header.sender_id, ack_envelope)
+                except Exception as exc:
+                    logger.error(f"Handler for {envelope.header.intent} raised: {exc}")
+                    if self.auto_ack and envelope.header.intent not in (Intent.ACK, Intent.NACK):
+                        nack_envelope = self._create_nack_envelope(envelope, str(exc))
+                        await self._dispatch_envelope(envelope.header.sender_id, nack_envelope)
             else:
                 logger.warning(f"No handler registered for intent: {envelope.header.intent}")
                 
@@ -352,7 +398,7 @@ class TPCPNode:
         except Exception as e:
             logger.error(f"Failed to process inbound message: {e}")
 
-    async def _handle_handshake(self, envelope: TPCPEnvelope, websocket: WebSocketServerProtocol) -> None:
+    async def _handle_handshake(self, envelope: TPCPEnvelope, websocket: ServerConnection) -> None:
         """Auto-register handshake senders in the peer registry with signature verification."""
         logger.info(f"Handshake received from {envelope.header.sender_id}")
         
@@ -376,7 +422,7 @@ class TPCPNode:
             except (json.JSONDecodeError, Exception) as e:
                 logger.debug(f"Could not auto-register peer from handshake: {e}")
         
-    async def _handle_state_sync(self, envelope: TPCPEnvelope, websocket: WebSocketServerProtocol) -> None:
+    async def _handle_state_sync(self, envelope: TPCPEnvelope, websocket: ServerConnection) -> None:
         """Merge CRDTSyncPayloads into local shared memory."""
         if not isinstance(envelope.payload, CRDTSyncPayload):
             logger.error("STATE_SYNC envelope did not contain a CRDTSyncPayload.")
@@ -390,10 +436,10 @@ class TPCPNode:
         else:
             logger.warning(f"Unsupported CRDT type: {payload.crdt_type}")
 
-    async def _handle_vector_sync(self, envelope: TPCPEnvelope, websocket: WebSocketServerProtocol) -> None:
+    async def _handle_vector_sync(self, envelope: TPCPEnvelope, websocket: ServerConnection) -> None:
         """Ingest dense contextual vectors into the local VectorBank."""
         if not isinstance(envelope.payload, VectorEmbeddingPayload):
-            logger.error(f"STATE_SYNC_VECTOR envelope lacked VectorEmbeddingPayload.")
+            logger.error("STATE_SYNC_VECTOR envelope lacked VectorEmbeddingPayload.")
             return
 
         payload = envelope.payload
@@ -407,26 +453,162 @@ class TPCPNode:
         )
         logger.info(f"[Vector Bank] Size: {self.vector_bank.total_vectors}")
 
-    async def send_message(self, target_id: UUID, intent: Intent, payload: Payload) -> None:
-        """Sign and dispatch a TPCP message to a specific peer in the registry."""
+    async def _handle_ack(self, envelope: TPCPEnvelope, websocket) -> None:
+        """Resolve the pending Future when an ACK is received."""
+        if envelope.ack_info and envelope.ack_info.acked_message_id in self._pending_acks:
+            fut = self._pending_acks.pop(envelope.ack_info.acked_message_id)
+            if not fut.done():
+                fut.set_result(envelope)
+
+    async def _handle_nack(self, envelope: TPCPEnvelope, websocket) -> None:
+        """Reject the pending Future when a NACK is received. The caller of send_message receives a RuntimeError and can decide whether to retry or re-queue."""
+        if envelope.ack_info and envelope.ack_info.acked_message_id in self._pending_acks:
+            msg_id = envelope.ack_info.acked_message_id
+            fut = self._pending_acks.pop(msg_id)
+            if not fut.done():
+                fut.set_exception(RuntimeError(f"NACK received for message {msg_id}"))
+
+    def _create_header(self, receiver_id: UUID, intent: Intent) -> MessageHeader:
+        """Create a MessageHeader for an outbound envelope."""
+        return MessageHeader(
+            sender_id=self.identity.agent_id,
+            receiver_id=receiver_id,
+            intent=intent,
+            protocol_version=PROTOCOL_VERSION
+        )
+
+    def _create_ack_envelope(self, original_envelope: TPCPEnvelope) -> TPCPEnvelope:
+        """Create an ACK envelope referencing the original message."""
+        header = self._create_header(
+            receiver_id=original_envelope.header.sender_id,
+            intent=Intent.ACK,
+        )
+        payload = TextPayload(content="OK")
+        ack_info = AckInfo(acked_message_id=original_envelope.header.message_id)
+        envelope = TPCPEnvelope(header=header, payload=payload, ack_info=ack_info)
+        signable = {**payload.model_dump(), "ack_info": ack_info.model_dump()}
+        envelope.signature = self.identity_manager.sign_payload(signable)
+        return envelope
+
+    def _create_nack_envelope(self, original_envelope: TPCPEnvelope, reason: str) -> TPCPEnvelope:
+        """Create a NACK envelope referencing the original message."""
+        from tpcp.schemas.envelope import AckInfo, TextPayload
+        header = self._create_header(
+            receiver_id=original_envelope.header.sender_id,
+            intent=Intent.NACK,
+        )
+        payload = TextPayload(content=reason)
+        ack_info = AckInfo(acked_message_id=original_envelope.header.message_id)
+        envelope = TPCPEnvelope(header=header, payload=payload, ack_info=ack_info)
+        signable = {**payload.model_dump(), "ack_info": ack_info.model_dump()}
+        envelope.signature = self.identity_manager.sign_payload(signable)
+        return envelope
+
+    async def send_message(
+        self,
+        target_id: UUID,
+        intent: Intent,
+        payload: Payload,
+        require_ack: bool = False,
+        chunk_info: Optional[ChunkInfo] = None,
+    ) -> UUID:
+        """Sign and dispatch a TPCP message to a specific peer in the registry.
+
+        Returns the message_id of the sent envelope.
+        """
         header = MessageHeader(
             sender_id=self.identity.agent_id,
             receiver_id=target_id,
             intent=intent,
             protocol_version=PROTOCOL_VERSION
         )
-        
+
         payload_dict = payload.model_dump()
+        if chunk_info is not None:
+            payload_dict = {**payload_dict, "chunk_info": chunk_info.model_dump()}
         signature_str = self.identity_manager.sign_payload(payload_dict)
-        
-        envelope = TPCPEnvelope(header=header, payload=payload, signature=signature_str)
+
+        envelope = TPCPEnvelope(header=header, payload=payload, signature=signature_str, chunk_info=chunk_info)
+
+        if require_ack:
+            fut = asyncio.get_running_loop().create_future()
+            self._pending_acks[envelope.header.message_id] = fut
+
         await self._dispatch_envelope(target_id, envelope)
 
-    async def _get_peer_connection(self, target_id: UUID) -> Optional[websockets.client.WebSocketClientProtocol]:
+        if require_ack:
+            try:
+                await asyncio.wait_for(fut, timeout=30.0)
+            except asyncio.TimeoutError:
+                self._pending_acks.pop(envelope.header.message_id, None)
+                raise asyncio.TimeoutError(f"No ACK received for {envelope.header.message_id} within 30s")
+
+        return envelope.header.message_id
+
+    async def send_broadcast(self, intent: Intent, payload: Payload) -> int:
+        """
+        Send a broadcast message to all reachable peers.
+
+        When connected to an A-DNS relay, sends ONE envelope with receiver_id=BROADCAST_UUID
+        so the relay fans out to all registered agents (including those not directly connected
+        to this node). Falls back to direct fan-out when in P2P-only mode.
+
+        Returns:
+            Number of messages dispatched (1 when relay is used, N peers in P2P mode).
+        """
+        payload_dict = payload.model_dump()
+        signature_str = self.identity_manager.sign_payload(payload_dict)
+
+        if self._adns_ws:
+            # Relay mode: send one message; relay handles fan-out to all registered nodes.
+            header = self._create_header(receiver_id=BROADCAST_UUID, intent=intent)
+            envelope = TPCPEnvelope(header=header, payload=payload, signature=signature_str)
+            try:
+                await self._adns_ws.send(envelope.model_dump_json())
+                logger.info(f"[Broadcast] Sent via relay to BROADCAST_UUID (intent={intent.value})")
+                return 1
+            except Exception as exc:
+                logger.warning(f"[Broadcast] Relay send failed: {exc} — falling back to direct fan-out")
+
+        # P2P fallback: fan-out individually to all locally-known peers.
+        dispatched = 0
+        for peer_id in list(self.peer_registry.keys()):
+            try:
+                header = self._create_header(receiver_id=peer_id, intent=intent)
+                envelope = TPCPEnvelope(header=header, payload=payload, signature=signature_str)
+                await self._dispatch_envelope(peer_id, envelope)
+                dispatched += 1
+            except Exception as exc:
+                logger.warning(f"[Broadcast] Failed to dispatch to {peer_id}: {exc}")
+        return dispatched
+
+    async def send_multicast(self, tag: str, intent: Intent, payload: Payload) -> int:
+        """
+        Send an envelope to all peers whose capabilities list contains the given tag.
+
+        Args:
+            tag: Capability tag to filter peers by (e.g. "vision", "robotics", "plc").
+            intent: The intent of the message.
+            payload: The payload to send.
+
+        Returns:
+            Number of peers the message was dispatched to.
+        """
+        dispatched = 0
+        for peer_id, peer_identity in list(self.peer_registry.items()):
+            if tag in (peer_identity[0].capabilities or []):
+                try:
+                    await self.send_message(target_id=peer_id, intent=intent, payload=payload)
+                    dispatched += 1
+                except Exception as exc:
+                    logger.warning(f"[Multicast:{tag}] Failed to dispatch to {peer_id}: {exc}")
+        return dispatched
+
+    async def _get_peer_connection(self, target_id: UUID) -> Optional[ClientConnection]:
         """Get or create a pooled WebSocket connection to a peer."""
         if target_id in self._peer_connections:
             ws = self._peer_connections[target_id]
-            if not ws.closed:
+            if ws.state == WsState.OPEN:
                 return ws
             # Stale, remove
             del self._peer_connections[target_id]
@@ -436,7 +618,7 @@ class TPCPNode:
         
         _, endpoint = self.peer_registry[target_id]
         try:
-            ws = await websockets.client.connect(endpoint, ssl=self.ssl_context)
+            ws = await websockets.connect(endpoint, ssl=self.ssl_context)
             self._peer_connections[target_id] = ws
             return ws
         except Exception:
@@ -475,7 +657,7 @@ class TPCPNode:
         
         while self._running and await self.message_queue.has_messages(target_id):
             try:
-                ws = await websockets.client.connect(endpoint, ssl=self.ssl_context)
+                ws = await websockets.connect(endpoint, ssl=self.ssl_context)
                 self._peer_connections[target_id] = ws
                 logger.info(f"[Network Restored] Draining DLQ for {target_id}...")
                     
@@ -523,7 +705,7 @@ class TPCPNode:
             logger.info(f"Broadcasting discovery to {len(seed_nodes)} seed nodes.")
             for address in seed_nodes:
                 try:
-                    async with connect(address, ssl=self.ssl_context) as websocket:
+                    async with websockets.connect(address, ssl=self.ssl_context) as websocket:
                         await websocket.send(serialized)
                         logger.debug(f"Sent discovery to {address}")
                 except Exception as e:

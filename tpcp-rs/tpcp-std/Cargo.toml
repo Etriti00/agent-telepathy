@@ -1,0 +1,19 @@
+[package]
+name = "tpcp-std"
+version = "0.4.0"
+edition = "2021"
+description = "Async TPCP node for std environments (tokio + tokio-tungstenite)"
+license = "AGPL-3.0"
+
+[dependencies]
+tpcp-core = { path = "../tpcp-core" }
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = "0.23"
+futures-util = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+ed25519-dalek = { version = "2", features = ["std"] }
+
+[[example]]
+name = "hello"

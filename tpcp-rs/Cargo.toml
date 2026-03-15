@@ -1,0 +1,3 @@
+[workspace]
+members = ["tpcp-core", "tpcp-std"]
+resolver = "2"

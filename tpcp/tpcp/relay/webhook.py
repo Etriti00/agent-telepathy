@@ -25,18 +25,16 @@ to the cryptographically enforced TPCP Agent WebSocket Mesh.
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Optional
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from tpcp.schemas.envelope import (
     AgentIdentity,
     Intent,
-    TPCPEnvelope,
     TextPayload,
-    MessageHeader,
     PROTOCOL_VERSION
 )
 from tpcp.security.crypto import AgentIdentityManager
@@ -74,8 +72,8 @@ def configure_gateway(identity: AgentIdentity, identity_manager: AgentIdentityMa
 @app.post("/webhook/intent")
 async def trigger_swarm_intent(req: WebhookIntentRequest):
     """
-    HTTP POST trigger. Wraps raw API calls securely inside a signed TPCP TextPayload Envelope.
-    Ideal for Siri Shortcuts or Zapier external injection.
+    HTTP POST trigger. Wraps the incoming JSON body into a signed TPCP TextPayload envelope
+    and routes it to the local TPCP node for dispatch to the target agent.
     """
     if not _gateway_identity or not _identity_manager or not _local_tpcp_node:
         raise HTTPException(status_code=500, detail="Stateless Webhook Gateway has not been configured securely.")
@@ -86,32 +84,15 @@ async def trigger_swarm_intent(req: WebhookIntentRequest):
         raise HTTPException(status_code=400, detail="Invalid target_id UUID format.")
 
     payload = TextPayload(content=req.text)
-    
-    header = MessageHeader(
-        sender_id=_gateway_identity.agent_id,
-        receiver_id=t_id,
-        intent=req.intent,
-        protocol_version=PROTOCOL_VERSION
-    )
-
-    payload_dict = payload.model_dump()
-    signature = _identity_manager.sign_payload(payload_dict)
-
-    envelope = TPCPEnvelope(
-        header=header,
-        payload=payload,
-        signature=signature
-    )
 
     try:
         # Route the securely validated Envelope to the main TPCP swarm logic node.
         if _local_tpcp_node:
-            await _local_tpcp_node.send_message(t_id, req.intent, payload)
+            message_id = await _local_tpcp_node.send_message(t_id, req.intent, payload)
         else:
             raise HTTPException(status_code=500, detail="Local TPCP Node not attached.")
-            
-            
-        return {"status": "success", "message_id": str(header.message_id), "dispatched_to_swarm": True}
+
+        return {"status": "success", "message_id": str(message_id), "dispatched_to_swarm": True}
     except Exception as e:
         logger.error(f"Failed to bridge Webhook Intent to Swarm Core: {e}")
         raise HTTPException(status_code=502, detail="Failed to route into Mesh.")
@@ -126,7 +107,6 @@ async def get_health():
 if __name__ == "__main__":
     import uvicorn
     import asyncio
-    import os
     
     # Standalone execution example for the webhook gateway
     async def run_gateway():

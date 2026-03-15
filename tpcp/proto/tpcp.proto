@@ -1,0 +1,141 @@
+syntax = "proto3";
+
+// TPCP — Telepathy Communication Protocol
+// Version: 0.4.0
+// Wire format: JSON over WebSocket (this IDL is for SDK code generation)
+package tpcp;
+
+option go_package = "github.com/tpcp-protocol/tpcp-go/tpcp";
+option java_package = "io.tpcp.schema";
+option java_outer_classname = "TPCPProto";
+
+// ── INTENT ────────────────────────────────────────────────────────────────────
+
+enum Intent {
+  HANDSHAKE = 0;
+  TASK_REQUEST = 1;
+  STATE_SYNC = 2;
+  STATE_SYNC_VECTOR = 3;
+  MEDIA_SHARE = 4;
+  CRITIQUE = 5;
+  TERMINATE = 6;
+  ACK = 7;
+  NACK = 8;
+  BROADCAST = 9;
+}
+
+// ── AGENT IDENTITY ────────────────────────────────────────────────────────────
+
+message AgentIdentity {
+  string agent_id = 1;            // UUID string
+  string framework = 2;           // e.g. "CrewAI", "LangGraph", "React-Dashboard"
+  repeated string capabilities = 3;
+  string public_key = 4;          // Base64-encoded Ed25519 public key
+  repeated string modality = 5;   // e.g. ["text", "image", "audio"]
+}
+
+// ── MESSAGE HEADER ─────────────────────────────────────────────────────────────
+
+message MessageHeader {
+  string message_id = 1;          // UUID string
+  string sender_id = 2;           // UUID string
+  string receiver_id = 3;         // UUID string; "00000000-0000-0000-0000-000000000000" = broadcast
+  string protocol_version = 4;    // e.g. "0.4.0"
+  string timestamp = 5;           // ISO 8601 UTC string, e.g. "2026-03-15T10:00:00Z"
+  string intent = 6;              // Intent enum value as string (matches JSON wire)
+  int32 ttl = 7;                  // Time-to-live hop count (default 30)
+}
+
+// ── PAYLOAD TYPES ─────────────────────────────────────────────────────────────
+
+message TextPayload {
+  string payload_type = 1;        // always "text"
+  string content = 2;
+}
+
+message VectorEmbeddingPayload {
+  string payload_type = 1;        // always "vector_embedding"
+  repeated float vector = 2;
+  int32 dimensions = 3;
+  string model_id = 4;
+  optional string raw_text_fallback = 5;
+}
+
+message CRDTSyncPayload {
+  string payload_type = 1;        // always "crdt_sync"
+  string crdt_type = 2;           // e.g. "LWW-Map"
+  map<string, string> state = 3;  // key -> JSON-serialized LWW entry
+}
+
+message ImagePayload {
+  string payload_type = 1;        // always "image"
+  string data_base64 = 2;
+  string mime_type = 3;           // e.g. "image/png"
+  optional string caption = 4;    // text fallback for agents that can't process images
+}
+
+message AudioPayload {
+  string payload_type = 1;        // always "audio"
+  string data_base64 = 2;
+  string mime_type = 3;           // e.g. "audio/wav"
+  optional string transcript = 4; // text fallback
+}
+
+message VideoPayload {
+  string payload_type = 1;        // always "video"
+  string data_base64 = 2;
+  string mime_type = 3;           // e.g. "video/mp4"
+  optional string description = 4; // text fallback
+}
+
+message BinaryPayload {
+  string payload_type = 1;        // always "binary"
+  string data_base64 = 2;
+  string mime_type = 3;
+  optional string description = 4;
+}
+
+message TelemetryReading {
+  float value = 1;
+  int64 timestamp_ms = 2;         // Unix epoch milliseconds
+  optional string quality = 3;    // "Good", "Bad", or "Uncertain"
+}
+
+message TelemetryPayload {
+  string payload_type = 1;        // always "telemetry"
+  string sensor_id = 2;
+  string unit = 3;
+  repeated TelemetryReading readings = 4;
+  string source_protocol = 5;     // "opcua", "modbus", "canbus", or "mqtt"
+}
+
+// ── ACK / CHUNK METADATA ──────────────────────────────────────────────────────
+
+message AckInfo {
+  string acked_message_id = 1;    // UUID string of the message being acknowledged
+}
+
+message ChunkInfo {
+  int32 chunk_index = 1;          // Zero-based, must be >= 0
+  int32 total_chunks = 2;         // Must be >= 1
+  string transfer_id = 3;         // UUID string for this chunked transfer
+}
+
+// ── ENVELOPE ──────────────────────────────────────────────────────────────────
+
+message TPCPEnvelope {
+  MessageHeader header = 1;
+  oneof payload {
+    TextPayload text = 2;
+    VectorEmbeddingPayload vector_embedding = 3;
+    CRDTSyncPayload crdt_sync = 4;
+    ImagePayload image = 5;
+    AudioPayload audio = 6;
+    VideoPayload video = 7;
+    BinaryPayload binary = 8;
+    TelemetryPayload telemetry = 9;
+  }
+  optional string signature = 10; // Base64-encoded Ed25519 signature
+  optional AckInfo ack_info = 11;
+  optional ChunkInfo chunk_info = 12;
+}

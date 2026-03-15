@@ -25,6 +25,10 @@ from .envelope import (
     VectorEmbeddingPayload,
     CRDTSyncPayload,
     TPCPEnvelope,
+    AckInfo,
+    ChunkInfo,
+    TelemetryReading,
+    TelemetryPayload,
 )
 
 __all__ = [
@@ -36,4 +40,8 @@ __all__ = [
     "VectorEmbeddingPayload",
     "CRDTSyncPayload",
     "TPCPEnvelope",
+    "AckInfo",
+    "ChunkInfo",
+    "TelemetryReading",
+    "TelemetryPayload",
 ]

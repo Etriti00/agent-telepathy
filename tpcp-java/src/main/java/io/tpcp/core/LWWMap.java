@@ -1,0 +1,40 @@
+package io.tpcp.core;
+
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
+
+/**
+ * Last-Write-Wins CRDT map, thread-safe via ConcurrentHashMap.
+ *
+ * <p>Higher {@code timestampMs} always wins. Equal timestamps keep the existing value.
+ */
+public class LWWMap {
+    private final ConcurrentHashMap<String, LWWEntry> map = new ConcurrentHashMap<>();
+
+    /** Writes a value with the given timestamp. No-op if a newer value exists. */
+    public void set(String key, Object value, long timestampMs) {
+        map.merge(key, new LWWEntry(value, timestampMs), (existing, incoming) ->
+                incoming.timestampMs > existing.timestampMs ? incoming : existing);
+    }
+
+    /** Returns the value for a key, or empty if absent. */
+    public Optional<Object> get(String key) {
+        LWWEntry entry = map.get(key);
+        return entry == null ? Optional.empty() : Optional.ofNullable(entry.value);
+    }
+
+    /** Merges all entries from {@code other} using LWW semantics. */
+    public void merge(LWWMap other) {
+        other.map.forEach((k, v) -> set(k, v.value, v.timestampMs));
+    }
+
+    /** Returns a plain map snapshot of current values. */
+    public Map<String, Object> toMap() {
+        return map.entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().value));
+    }
+
+    private record LWWEntry(Object value, long timestampMs) {}
+}

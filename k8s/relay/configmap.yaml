@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tpcp-relay-config
+  namespace: tpcp-system
+  labels:
+    app.kubernetes.io/name: tpcp-relay
+    app.kubernetes.io/component: relay
+data:
+  TPCP_PORT: "8765"
+  TPCP_LOG_LEVEL: "INFO"
+  REDIS_URL: "redis://redis-service.tpcp-system.svc.cluster.local:6379"
+  TPCP_MAX_PEERS: "10000"
+  TPCP_HEARTBEAT_INTERVAL: "30"

@@ -16,6 +16,7 @@
 # 
 # For commercial licensing inquiries, see COMMERCIAL_LICENSE.md
 
+import threading
 from abc import ABC, abstractmethod
 from typing import Any
 from uuid import UUID
@@ -32,6 +33,14 @@ class BaseFrameworkAdapter(ABC):
     def __init__(self, agent_identity: AgentIdentity, identity_manager=None):
         self.identity = agent_identity
         self.identity_manager = identity_manager
+        self._logical_clock: int = 0
+        self._clock_lock = threading.Lock()
+
+    def _tick(self) -> int:
+        """Atomically increment and return the logical clock. Thread-safe."""
+        with self._clock_lock:
+            self._logical_clock += 1
+            return self._logical_clock
 
     @abstractmethod
     def pack_thought(self, target_id: UUID, raw_output: Any, intent: Intent) -> TPCPEnvelope:

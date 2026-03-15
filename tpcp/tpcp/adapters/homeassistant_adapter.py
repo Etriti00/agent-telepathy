@@ -84,7 +84,7 @@ class HomeAssistantAdapter(BaseFrameworkAdapter):
             }
         }
         
-        self._logical_clock += 1
+        self._tick()
         
         payload = CRDTSyncPayload(
             crdt_type="LWW-Map",
@@ -102,7 +102,7 @@ class HomeAssistantAdapter(BaseFrameworkAdapter):
         signature_str = self.identity_manager.sign_payload(payload.model_dump())
         return TPCPEnvelope(header=header, payload=payload, signature=signature_str)
 
-    async def execute_service_call(self, domain: str, service: str, entity_id: str, service_data: dict = None) -> bool:
+    async def execute_service_call(self, domain: str, service: str, entity_id: str, service_data: Optional[dict] = None) -> bool:
         """
         Translates a TPCP agent's physical request into HA REST POST.
         e.g., domain="light", service="turn_on", entity_id="light.living_room".

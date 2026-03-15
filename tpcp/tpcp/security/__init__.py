@@ -17,5 +17,6 @@
 # For commercial licensing inquiries, see COMMERCIAL_LICENSE.md
 
 from .crypto import AgentIdentityManager
+from .acl import ACLPolicy
 
-__all__ = ["AgentIdentityManager"]
+__all__ = ["AgentIdentityManager", "ACLPolicy"]

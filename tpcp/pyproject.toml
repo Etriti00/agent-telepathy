@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tpcp-core"
-version = "0.3.0"
+version = "0.4.0"
 description = "Telepathy Communication Protocol - A framework-agnostic communication protocol for autonomous agents."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -29,8 +29,12 @@ dependencies = [
     "websockets>=12.0",
     "httpx>=0.27.0",
     "cryptography>=42.0.0",
-    "aiosqlite>=0.20.0"
+    "aiosqlite>=0.20.0",
+    "click>=8.0.0"
 ]
+
+[project.scripts]
+tpcp = "tpcp.cli.main:cli"
 
 [project.urls]
 Homepage = "https://github.com/tpcp-protocol/tpcp"
@@ -42,6 +46,7 @@ Documentation = "https://github.com/tpcp-protocol/tpcp/blob/main/tpcp/docs/api_r
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
+    "pytest-timeout>=0.5.0",
     "black>=24.2.0",
     "mypy>=1.8.0",
     "ruff>=0.3.0"
@@ -52,9 +57,32 @@ edge = [
     "uvicorn>=0.29.0",
     "aiohttp>=3.9.3"
 ]
+industrial = [
+    "asyncua>=1.1.0",
+    "pymodbus>=3.6.0",
+    "python-can>=4.3.0",
+]
+ai-frameworks = [
+    "autogen-agentchat>=0.4.0",
+    "pydantic-ai>=0.0.14",
+    "smolagents>=1.0.0",
+    "openai>=1.0.0",
+    "llama-index>=0.10.0",
+    "haystack-ai>=2.0.0",
+    "semantic-kernel>=1.0.0",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["tpcp"]
+
+[tool.mypy]
+ignore_missing_imports = true
+warn_unused_ignores = false
+
+[[tool.mypy.overrides]]
+module = ["websockets.*"]
+ignore_errors = true
+
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

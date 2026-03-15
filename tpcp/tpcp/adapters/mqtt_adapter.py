@@ -59,7 +59,7 @@ class MQTTAdapter(BaseFrameworkAdapter):
         self.broker_host = broker_host
         self.broker_port = broker_port
         
-        self.client = mqtt.Client(client_id, protocol=mqtt.MQTTv311)
+        self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1, client_id=client_id, protocol=mqtt.MQTTv311)
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
         self.client.on_disconnect = self._on_disconnect
@@ -89,7 +89,7 @@ class MQTTAdapter(BaseFrameworkAdapter):
             }
         }
         
-        self._logical_clock += 1
+        self._tick()
         
         payload = CRDTSyncPayload(
             crdt_type="LWW-Map",

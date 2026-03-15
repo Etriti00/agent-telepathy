@@ -31,7 +31,11 @@ import logging
 from typing import Dict, Optional
 
 import websockets
-from websockets.server import WebSocketServerProtocol
+from websockets.asyncio.server import ServerConnection
+from websockets.datastructures import Headers
+from websockets.http11 import Request, Response as HTTPResponse
+
+BROADCAST_ID = "00000000-0000-0000-0000-000000000000"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ADNS-Relay")
@@ -92,7 +96,7 @@ class ADNSRelayServer:
         # Rate limiters per connection
         self._rate_limiters: Dict[int, TokenBucket] = {}
 
-    async def _handle_connection(self, websocket: WebSocketServerProtocol, *args) -> None:
+    async def _handle_connection(self, websocket: ServerConnection) -> None:
         agent_id = None
         ws_id = id(websocket)
         self._rate_limiters[ws_id] = TokenBucket(self.rate_limit, self.burst_limit)
@@ -145,7 +149,22 @@ class ADNSRelayServer:
                     data["header"] = header
                     forwarded_message = json.dumps(data)
                     
-                    if target_id and target_id in self.registry and target_id != sender_id:
+                    if target_id == BROADCAST_ID:
+                        # Fan-out to all registered peers except the sender
+                        fanout_count = 0
+                        stale_agents = []
+                        for agent_id, info in list(self.registry.items()):
+                            if agent_id != sender_id:
+                                try:
+                                    await info["ws"].send(forwarded_message)
+                                    fanout_count += 1
+                                except Exception as exc:
+                                    logger.warning(f"[Relay] Broadcast to {agent_id} failed: {exc}")
+                                    stale_agents.append(agent_id)
+                        for agent_id in stale_agents:
+                            del self.registry[agent_id]
+                        logger.info(f"[Relay] Broadcast from {sender_id}: fanned out to {fanout_count} peers")
+                    elif target_id and target_id in self.registry and target_id != sender_id:
                         logger.info(f"Routing {intent} from {sender_id} to {target_id} (TTL={ttl-1})")
                         target_ws = self.registry[target_id]["ws"]
                         try:
@@ -179,7 +198,7 @@ class ADNSRelayServer:
             for aid in agents_to_clean:
                 del self._pending_challenges[aid]
 
-    async def _initiate_challenge(self, sender_id: str, data: dict, websocket: WebSocketServerProtocol) -> None:
+    async def _initiate_challenge(self, sender_id: str, data: dict, websocket: ServerConnection) -> None:
         """
         Generate a random nonce and challenge the connecting node to prove identity.
         The node must sign the nonce with their private key and return it.
@@ -224,7 +243,7 @@ class ADNSRelayServer:
             if sender_id in self._pending_challenges:
                 del self._pending_challenges[sender_id]
 
-    async def _handle_challenge_response(self, sender_id: str, data: dict, websocket: WebSocketServerProtocol) -> None:
+    async def _handle_challenge_response(self, sender_id: str, data: dict, websocket: ServerConnection) -> None:
         """Verify the signed nonce from the node to complete registration."""
         if sender_id not in self._pending_challenges:
             logger.warning(f"Unexpected challenge response from {sender_id}. Ignoring.")
@@ -264,13 +283,39 @@ class ADNSRelayServer:
             del self._pending_challenges[sender_id]
             await websocket.close(1008, "Challenge verification failed")
 
+    async def _process_request(self, connection: ServerConnection, request: Request) -> Optional[HTTPResponse]:
+        """Handle HTTP requests before WebSocket upgrade.
+        Returns an HTTPResponse for HTTP-only paths, or None to continue
+        with WebSocket upgrade.
+        """
+        if request.path == "/health":
+            body = json.dumps({
+                "status": "ok",
+                "registered_nodes": len(self.registry),
+            }).encode("utf-8")
+            headers = Headers([
+                ("Content-Type", "application/json"),
+                ("Content-Length", str(len(body))),
+            ])
+            return HTTPResponse(200, "OK", headers, body)
+        return None
+
     async def start(self) -> None:
         logger.info(f"Starting A-DNS Global Relay on ws://{self.host}:{self.port}")
         logger.info(f"  Rate limit: {self.rate_limit} msg/sec, burst: {self.burst_limit}")
-        logger.info(f"  Challenge-response authentication: ENABLED")
-        async with websockets.serve(self._handle_connection, self.host, self.port):
+        logger.info("  Challenge-response authentication: ENABLED")
+        async with websockets.serve(
+            self._handle_connection,
+            self.host,
+            self.port,
+            process_request=self._process_request,
+        ):
             await asyncio.Future()
 
 if __name__ == "__main__":
-    server = ADNSRelayServer("0.0.0.0", 9000)
+    try:
+        port = int(os.environ.get("TPCP_PORT", "8765"))
+    except ValueError:
+        port = 8765
+    server = ADNSRelayServer("0.0.0.0", port)
     asyncio.run(server.start())

@@ -8,7 +8,6 @@ from tpcp.schemas.envelope import (
     MessageHeader,
     TextPayload,
     VectorEmbeddingPayload,
-    CRDTSyncPayload,
     TPCPEnvelope
 )
 
