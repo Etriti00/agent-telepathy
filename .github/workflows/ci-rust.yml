@@ -1,0 +1,16 @@
+name: Rust Tests
+on:
+  push:
+    paths: ['tpcp-rs/**']
+  pull_request:
+    paths: ['tpcp-rs/**']
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - run: cd tpcp-rs && cargo clippy -- -D warnings
+      - run: cd tpcp-rs && cargo test
