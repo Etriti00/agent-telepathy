@@ -1,13 +1,17 @@
 name: Publish Python SDK to PyPI
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_run:
+    workflows: ["TPCP CI/CD"]
+    types: [completed]
+    branches: ['main']
 
 jobs:
   publish-python:
     runs-on: ubuntu-latest
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      startsWith(github.event.workflow_run.head_branch, 'v')
     permissions:
       contents: read
       id-token: write  # Required for OIDC-based PyPI publishing

@@ -11,11 +11,12 @@
   <a href="https://www.gnu.org/licenses/agpl-3.0"><img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="License: AGPL v3"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white" alt="Python 3.11+"></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-Ready-3178c6?logo=typescript&logoColor=white" alt="TypeScript"></a>
+  <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go&logoColor=white" alt="Go"></a>
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-stable-DEA584?logo=rust&logoColor=white" alt="Rust"></a>
+  <a href="https://openjdk.org/"><img src="https://img.shields.io/badge/Java-21+-ED8B00?logo=openjdk&logoColor=white" alt="Java"></a>
   <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
-  <img src="https://img.shields.io/badge/version-0.4.0-orange" alt="Version 0.4.0">
-  <a href="https://github.com/tpcp-protocol/tpcp/actions/workflows/ci.yml"><img src="https://github.com/tpcp-protocol/tpcp/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://pypi.org/project/tpcp-core/"><img src="https://img.shields.io/pypi/v/tpcp-core?color=blue&logo=python&logoColor=white" alt="PyPI"></a>
-  <a href="https://www.npmjs.com/package/tpcp-ts"><img src="https://img.shields.io/npm/v/tpcp-ts?color=red&logo=npm" alt="npm"></a>
+  <img src="https://img.shields.io/badge/version-0.4.1-orange" alt="Version 0.4.1">
+  <a href="https://github.com/Etriti00/agent-telepathy/actions/workflows/ci.yml"><img src="https://github.com/Etriti00/agent-telepathy/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 </p>
 
 <p align="center">
@@ -84,6 +85,7 @@ It's an open protocol that lets any AI agent — regardless of what LLM powers i
 | **Works Anywhere** | Agents discover each other globally via the A-DNS relay. No static IPs. No VPNs. Just connect and go. |
 | **Zero Data Loss** | If an agent goes offline, messages queue up and drain automatically when it's back. No messages are ever lost. |
 | **Universal Edge Bridging** | Bridge autonomous robots (ROS2), Smart Homes (HomeAssistant/Matter), Industrial Sensors (MQTT), and Zapier/Siri Webhooks natively into the swarm constraint-free. |
+| **5 SDK Languages** | First-class SDKs for Python, TypeScript, Go, Rust, and Java — use whatever your team already knows. |
 
 ---
 
@@ -113,7 +115,7 @@ async def main():
     async with TPCPNode(identity, port=8000) as node:
         # Share state — all peers see this instantly
         node.shared_memory.set("status", "analyzing")
-        
+
         # Send a message to another agent (any LLM, any framework)
         await node.send_message(
             target_id=peer_uuid,
@@ -180,6 +182,7 @@ TPCP isn't limited to text. Agents can share **images, audio, video, and any bin
 | `VectorEmbeddingPayload` | Dense float arrays | `raw_text_fallback` | Semantic search across the swarm's collective knowledge |
 | `CRDTSyncPayload` | Key-value state | — | Conflict-free shared memory between all agents |
 | `BinaryPayload` | Any file (PDF, dataset) | `description` | Sharing documents, spreadsheets, 3D models |
+| `TelemetryPayload` | Industrial sensor readings | — | OPC-UA, Modbus, CANbus, MQTT sensor data streams |
 
 ### How cross-modal communication works
 
@@ -232,27 +235,47 @@ Agent goes offline? Messages queue up (max 500/peer). When it's back, they drain
 ## 🏗️ Repository Structure
 
 ```
-TPCP-Workspace/
+agent-telepathy/
 ├── tpcp/                    # Python SDK (tpcp-core)
 │   ├── tpcp/
 │   │   ├── core/            # TPCPNode, MessageQueue (DLQ)
-│   │   ├── schemas/         # Pydantic schemas (7 payload types)
+│   │   ├── schemas/         # Pydantic schemas (8 payload types)
 │   │   ├── security/        # Ed25519 with key persistence
 │   │   ├── memory/          # LWWMap CRDT (+ SQLite), VectorBank (+ cosine search)
 │   │   ├── adapters/        # CrewAI, LangGraph, ROS2, HomeAssistant, MQTT adapters
 │   │   └── relay/           # A-DNS relay & FastAPI Webhook Gateway
 │   ├── examples/            # Runnable demos
-│   ├── tests/               # 20 pytest tests
+│   ├── tests/               # pytest test suite
 │   └── pyproject.toml
 │
 ├── tpcp-ts/                 # TypeScript SDK — Node.js / React / Next.js
 │   ├── src/
 │   │   ├── core/            # TPCPNode (EventEmitter), DLQ, VectorBank
-│   │   ├── schemas/         # Zod schemas (7 payload types)
+│   │   ├── schemas/         # Zod schemas (8 payload types)
 │   │   ├── security/        # tweetnacl Ed25519 with key persistence
 │   │   └── memory/          # LWWMap CRDT
 │   └── package.json
 │
+├── tpcp-go/                 # Go SDK
+│   ├── tpcp/                # TPCPNode, envelope schemas, Ed25519 signing
+│   └── go.mod
+│
+├── tpcp-rs/                 # Rust SDK (workspace: tpcp-core + tpcp-std)
+│   ├── tpcp-core/           # Schema types, Ed25519, CRDT
+│   ├── tpcp-std/            # TPCPNode with tokio-tungstenite transport
+│   └── Cargo.toml
+│
+├── tpcp-java/               # Java SDK
+│   ├── src/main/java/io/tpcp/
+│   │   ├── schema/          # Jackson-annotated envelope types
+│   │   └── core/            # TPCPNode with Java-WebSocket transport
+│   └── pom.xml
+│
+├── k8s/                     # Kubernetes deployment manifests
+│   ├── relay/               # A-DNS relay Deployment, Service, NetworkPolicy
+│   └── redis/               # Redis StatefulSet, Secret, NetworkPolicy
+│
+├── docs/                    # Project-level documentation
 ├── LICENSE                  # AGPL v3
 ├── COMMERCIAL_LICENSE.md    # Enterprise terms
 ├── CONTRIBUTING.md          # Dev setup & PR guide
