@@ -165,6 +165,8 @@ export class TPCPNode extends EventEmitter {
   protected _running: boolean = false;
   private _peerConnections: Map<string, WebSocket> = new Map();
   private _pendingConnections: Map<string, Promise<WebSocket>> = new Map();
+  _seenMessages: Map<string, number> = new Map();
+  _cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(identity: AgentIdentity, host: string = "127.0.0.1", port: number = 8000, adnsUrl?: string) {
     super();
@@ -179,6 +181,13 @@ export class TPCPNode extends EventEmitter {
     this.sharedMemory = new LWWMap(this.identity.agent_id);
     this.vectorBank = new VectorBank(this.identity.agent_id);
     this.messageQueue = new MessageQueue(500);
+
+    this._cleanupInterval = setInterval(() => {
+      const cutoff = Date.now() - 300_000;
+      for (const [id, ts] of this._seenMessages) {
+        if (ts < cutoff) this._seenMessages.delete(id);
+      }
+    }, 60_000);
   }
 
   public registerPeer(identity: AgentIdentity, address: string): void {
@@ -220,7 +229,8 @@ export class TPCPNode extends EventEmitter {
 
   public async stopListening(): Promise<void> {
     this._running = false;
-    
+    if (this._cleanupInterval) clearInterval(this._cleanupInterval);
+
     for (const [_, ws] of this._peerConnections) {
       try { ws.close(); } catch (e) {}
     }
@@ -313,6 +323,13 @@ export class TPCPNode extends EventEmitter {
     try {
       const parsed = JSON.parse(rawMessage);
       const envelope = TPCPEnvelopeSchema.parse(parsed);
+
+      const messageId = envelope.header.message_id;
+      if (this._seenMessages.has(messageId)) {
+        console.debug(`[TPCPNode] duplicate message ${messageId} -- dropping`);
+        return;
+      }
+      this._seenMessages.set(messageId, Date.now());
 
       // TTL enforcement
       if (envelope.header.ttl <= 0) {
