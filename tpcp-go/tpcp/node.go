@@ -49,6 +49,9 @@ type TPCPNode struct {
 	peers   map[string]*websocket.Conn
 	peersMu sync.RWMutex
 
+	seenMessages   map[string]int64
+	seenMessagesMu sync.Mutex
+
 	server *http.Server
 	done   chan struct{}
 	wg     sync.WaitGroup
@@ -63,9 +66,10 @@ func NewTPCPNode(identity *AgentIdentity, privKey ed25519.PrivateKey) *TPCPNode 
 		DLQ:      NewDLQ(),
 		Ready:    make(chan struct{}),
 		handlers: make(map[Intent]func(*TPCPEnvelope)),
-		peerKeys: make(map[string]string),
-		peers:    make(map[string]*websocket.Conn),
-		done:     make(chan struct{}),
+		peerKeys:     make(map[string]string),
+		peers:        make(map[string]*websocket.Conn),
+		seenMessages: make(map[string]int64),
+		done:         make(chan struct{}),
 	}
 }
 
@@ -242,19 +246,37 @@ func (n *TPCPNode) readLoop(peerID string, conn *websocket.Conn) {
 			continue
 		}
 
+		// Replay protection: drop duplicate message IDs; clean up entries older than 300s.
+		n.seenMessagesMu.Lock()
+		if _, dup := n.seenMessages[env.Header.MessageID]; dup {
+			n.seenMessagesMu.Unlock()
+			continue
+		}
+		n.seenMessages[env.Header.MessageID] = time.Now().Unix()
+		for id, ts := range n.seenMessages {
+			if time.Now().Unix()-ts > 300 {
+				delete(n.seenMessages, id)
+			}
+		}
+		n.seenMessagesMu.Unlock()
+
 		// Verify inbound signature if a public key is registered for the sender.
+		// Fail-closed: if the message carries a signature but the sender's public key
+		// is not registered, treat it as unverifiable and drop it.
 		if env.Signature != "" {
 			n.peerKeysMu.RLock()
 			pubKey, known := n.peerKeys[env.Header.SenderID]
 			n.peerKeysMu.RUnlock()
-			if known {
-				var payloadVal interface{}
-				if err := json.Unmarshal(env.Payload, &payloadVal); err == nil {
-					canonical, err := CanonicalJSON(payloadVal)
-					if err == nil && !Verify(pubKey, canonical, env.Signature) {
-						log.Printf("[TPCPNode] signature verification FAILED for message from %s — dropping", env.Header.SenderID)
-						continue
-					}
+			if !known {
+				log.Printf("[TPCPNode] signed message from unknown peer %s — dropping", env.Header.SenderID)
+				continue
+			}
+			var payloadVal interface{}
+			if err := json.Unmarshal(env.Payload, &payloadVal); err == nil {
+				canonical, err := CanonicalJSON(payloadVal)
+				if err == nil && !Verify(pubKey, canonical, env.Signature) {
+					log.Printf("[TPCPNode] signature verification FAILED for message from %s — dropping", env.Header.SenderID)
+					continue
 				}
 			}
 		}
