@@ -114,8 +114,8 @@ class HomeAssistantAdapter(BaseFrameworkAdapter):
         )
 
         envelope = TPCPEnvelope(header=header, payload=payload)
-        if self.identity_manager:
-            envelope.signature = self.identity_manager.sign_payload(payload.model_dump())
+        im = self._require_identity_manager()
+        envelope.signature = im.sign_payload(payload.model_dump())
         return envelope
 
     async def execute_service_call(self, domain: str, service: str, entity_id: str, service_data: Optional[dict] = None) -> bool:

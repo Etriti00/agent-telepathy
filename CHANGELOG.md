@@ -10,6 +10,42 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [0.4.1] — 2026-03-16
+
+### Fixed
+- DLQ `enqueue_front()` misleading eviction comment; added TypeScript `enqueueFront` size check
+- Race condition in VectorBank concurrent access (added `threading.Lock`)
+- Race condition in LWWMap `set()` logical clock mutation (added `asyncio.Lock` guard)
+- Go SDK `SendMessage` silently continued on `CanonicalJSON` failure — now returns error
+- Go SDK `Stop()` race condition with `readLoop` goroutines (added `sync.WaitGroup`)
+- Java `TPCPNode` empty catch block — now logs malformed envelopes
+- Java DLQ `enqueue()` return value unchecked — now logs when messages dropped
+
+### Security
+- Added webhook Bearer token authentication (`TPCP_WEBHOOK_SECRET` env var)
+- Added A-DNS challenge expiration (5-minute timeout) and per-IP rate limiting
+- Added replay protection to TypeScript, Go, Rust, Java SDKs
+- Fixed Go WebSocket CORS (now deny-by-default, configurable `AllowedOrigins`)
+- Changed signature verification to fail-closed for unknown peers (Go, Rust, Java)
+- Added crypto key validation roundtrip on initialization
+- Docker container runs as non-root user with HEALTHCHECK
+
+### Changed
+- Relaxed `TelemetryPayload.source_protocol` and `TelemetryReading.quality` to soft validation (warning, not rejection)
+- Added input validation (`Validate()`) to Go, Rust, Java payload types
+- Python dedup cache uses `OrderedDict` for bounded cleanup
+- Java `TPCPNode` constructor accepts `dlqCapacity` and `defaultTtl` parameters
+
+### Added
+- Comprehensive test suites for all 5 SDKs (~70 new tests)
+- CI workflows for Go, Rust, Java SDKs
+- Docker resource limits and log rotation in `docker-compose.yml`
+- MQTT adapter topic whitelisting (`allowed_topics` parameter)
+- ROS2 adapter configurable topic names
+- `_require_identity_manager()` guard in adapter base class
+
+---
+
 ## [0.4.0] — 2026-03-14
 
 ### Added

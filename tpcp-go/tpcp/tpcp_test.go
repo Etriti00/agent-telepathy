@@ -2,6 +2,7 @@ package tpcp
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -149,6 +150,125 @@ func TestMessageHeaderJSONFields(t *testing.T) {
 	}
 	if _, ok := m["timestamp_ms"]; ok {
 		t.Error("MessageHeader JSON must not have \"timestamp_ms\" — should be \"timestamp\"")
+	}
+}
+
+// TestTextPayloadValidateRejectsEmpty verifies that an empty TextPayload fails validation.
+func TestTextPayloadValidateRejectsEmpty(t *testing.T) {
+	p := TextPayload{PayloadType: "text", Content: ""}
+	if err := p.Validate(); err == nil {
+		t.Fatal("expected error for empty content")
+	}
+}
+
+// TestTextPayloadValidateAcceptsNonEmpty verifies that a non-empty TextPayload passes validation.
+func TestTextPayloadValidateAcceptsNonEmpty(t *testing.T) {
+	p := TextPayload{PayloadType: "text", Content: "hello"}
+	if err := p.Validate(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestVectorEmbeddingPayloadValidateDimensionMismatch verifies that a vector with wrong length fails.
+func TestVectorEmbeddingPayloadValidateDimensionMismatch(t *testing.T) {
+	p := VectorEmbeddingPayload{PayloadType: "vector_embedding", ModelID: "test", Dimensions: 3, Vector: []float64{1, 2}}
+	if err := p.Validate(); err == nil {
+		t.Fatal("expected dimension mismatch error")
+	}
+}
+
+// TestImagePayloadValidateRejectsInvalidBase64 verifies that invalid base64 fails validation.
+func TestImagePayloadValidateRejectsInvalidBase64(t *testing.T) {
+	p := ImagePayload{PayloadType: "image", DataBase64: "not-base64!!!", MimeType: "image/png"}
+	if err := p.Validate(); err == nil {
+		t.Fatal("expected base64 validation error")
+	}
+}
+
+// TestTelemetryPayloadValidateRejectsEmptyReadings verifies that empty readings slice fails.
+func TestTelemetryPayloadValidateRejectsEmptyReadings(t *testing.T) {
+	p := TelemetryPayload{PayloadType: "telemetry", SensorID: "s1", Unit: "rpm", Readings: []TelemetryReading{}, SourceProtocol: "opcua"}
+	if err := p.Validate(); err == nil {
+		t.Fatal("expected empty readings error")
+	}
+}
+
+// TestSendMessageRejectsInvalidPayload verifies that SendMessage returns an error for an invalid payload
+// before attempting peer lookup.
+func TestSendMessageRejectsInvalidPayload(t *testing.T) {
+	identity := &AgentIdentity{AgentID: "test-node", Framework: "test-fw"}
+	node := NewTPCPNode(identity, nil)
+	payload := &TextPayload{PayloadType: "text", Content: ""}
+	err := node.SendMessage("peer-1", IntentTaskRequest, payload)
+	if err == nil {
+		t.Fatal("expected SendMessage to reject invalid payload")
+	}
+}
+
+// TestDLQEnqueueDrain verifies that an enqueued envelope is returned by Drain.
+func TestDLQEnqueueDrain(t *testing.T) {
+	q := NewDLQ()
+	env := &TPCPEnvelope{
+		Header: MessageHeader{MessageID: "dlq-test-1"},
+	}
+	if !q.Enqueue(env) {
+		t.Fatal("Enqueue returned false; expected true")
+	}
+	drained := q.Drain()
+	if len(drained) != 1 {
+		t.Fatalf("Drain: got %d envelopes, want 1", len(drained))
+	}
+	if drained[0].Header.MessageID != "dlq-test-1" {
+		t.Errorf("Drain: got message ID %q, want %q", drained[0].Header.MessageID, "dlq-test-1")
+	}
+}
+
+// TestDLQOverflow verifies that enqueueing more items than capacity (100) silently
+// drops the excess and Drain returns at most 100 envelopes.
+func TestDLQOverflow(t *testing.T) {
+	q := NewDLQ()
+	const overCapacity = 150
+	for i := 0; i < overCapacity; i++ {
+		q.Enqueue(&TPCPEnvelope{Header: MessageHeader{MessageID: fmt.Sprintf("msg-%d", i)}})
+	}
+	drained := q.Drain()
+	if len(drained) > 100 {
+		t.Errorf("Drain returned %d envelopes; DLQ capacity is 100 so must not exceed 100", len(drained))
+	}
+}
+
+// TestLWWMapSetGet verifies that a value written with Set can be read back with Get.
+func TestLWWMapSetGet(t *testing.T) {
+	m := NewLWWMap()
+	m.Set("key1", "hello", 1000)
+	val, ok := m.Get("key1")
+	if !ok {
+		t.Fatal("Get returned false; expected key to be present")
+	}
+	if val != "hello" {
+		t.Errorf("Get: got %v, want %q", val, "hello")
+	}
+}
+
+// TestLWWMapLastWriterWins verifies that when the same key is written twice,
+// the higher-timestamp value wins.
+func TestLWWMapLastWriterWins(t *testing.T) {
+	m := NewLWWMap()
+	m.Set("counter", "first", 100)
+	m.Set("counter", "second", 200)
+	val, ok := m.Get("counter")
+	if !ok {
+		t.Fatal("Get returned false after two sets")
+	}
+	if val != "second" {
+		t.Errorf("LWW: got %v, want %q — higher timestamp should win", val, "second")
+	}
+
+	// An older timestamp must not overwrite the current value.
+	m.Set("counter", "stale", 50)
+	val, _ = m.Get("counter")
+	if val != "second" {
+		t.Errorf("LWW: older write overwrote newer value; got %v, want %q", val, "second")
 	}
 }
 

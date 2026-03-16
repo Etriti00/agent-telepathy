@@ -32,19 +32,30 @@ import java.util.function.Consumer;
 public class TPCPNode {
     public final AgentIdentity identity;
     public final LWWMap memory = new LWWMap();
-    public final DLQ dlq = new DLQ();
+    public final DLQ dlq;
 
     private final IdentityManager identityManager;
     private final OkHttpClient httpClient;
+    private final int defaultTtl;
     private final ConcurrentHashMap<Intent, Consumer<TPCPEnvelope>> handlers = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, WebSocket> peers = new ConcurrentHashMap<>();
     /** Maps agent_id → base64 public key for inbound signature verification. */
     private final ConcurrentHashMap<String, String> peerKeys = new ConcurrentHashMap<>();
+    /** Tracks seen message IDs → receipt timestamp (ms) for replay protection. */
+    private final ConcurrentHashMap<String, Long> seenMessages = new ConcurrentHashMap<>();
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
+    /** Convenience constructor with default dlqCapacity=100 and defaultTtl=30. */
     public TPCPNode(AgentIdentity identity, IdentityManager identityManager) {
+        this(identity, identityManager, 100, 30);
+    }
+
+    /** Full constructor allowing configuration of DLQ capacity and default TTL. */
+    public TPCPNode(AgentIdentity identity, IdentityManager identityManager, int dlqCapacity, int defaultTtl) {
         this.identity = identity;
         this.identityManager = identityManager;
+        this.dlq = new DLQ(dlqCapacity);
+        this.defaultTtl = defaultTtl;
         this.httpClient = new OkHttpClient();
     }
 
@@ -60,6 +71,9 @@ public class TPCPNode {
 
     /** Connects to a WebSocket URL asynchronously. */
     public CompletableFuture<Void> connect(String url) {
+        if (!url.startsWith("ws://") && !url.startsWith("wss://")) {
+            throw new IllegalArgumentException("URL must start with ws:// or wss://");
+        }
         CompletableFuture<Void> future = new CompletableFuture<>();
         Request request = new Request.Builder().url(url).build();
         httpClient.newWebSocket(request, new WebSocketListener() {
@@ -73,8 +87,18 @@ public class TPCPNode {
             public void onMessage(WebSocket ws, String text) {
                 try {
                     TPCPEnvelope env = MAPPER.readValue(text, TPCPEnvelope.class);
+                    // Replay protection: drop duplicate message IDs within the 5-minute window.
+                    if (env.header != null && env.header.messageId != null) {
+                        if (seenMessages.putIfAbsent(env.header.messageId, System.currentTimeMillis()) != null) {
+                            return; // duplicate
+                        }
+                        // Cleanup old entries
+                        long cutoff = System.currentTimeMillis() - 300_000;
+                        seenMessages.entrySet().removeIf(e -> e.getValue() < cutoff);
+                    }
                     // Verify inbound signature for all messages from registered peers.
-                    // Fail-closed: known peers must always provide a valid signature.
+                    // Fail-closed: known peers must always provide a valid signature;
+                    // messages that carry a signature but whose sender is unknown are also dropped.
                     if (env.header != null && env.header.senderId != null) {
                         String pubKey = peerKeys.get(env.header.senderId);
                         if (pubKey != null) {
@@ -85,11 +109,16 @@ public class TPCPNode {
                                 // Drop — invalid or missing signature from a known peer.
                                 return;
                             }
+                        } else if (env.signature != null && !env.signature.isEmpty()) {
+                            // Fail-closed: unknown sender presents a signature — drop.
+                            System.err.println("[TPCPNode] dropping signed message from unknown peer: "
+                                    + env.header.senderId);
+                            return;
                         }
                     }
                     dispatch(env);
                 } catch (Exception e) {
-                    // log and ignore malformed envelopes
+                    System.err.println("[TPCPNode] malformed envelope: " + e.getMessage());
                 }
             }
 
@@ -112,7 +141,7 @@ public class TPCPNode {
                 identity.agentId,
                 peerUrl,
                 intent,
-                30,
+                defaultTtl,
                 Constants.PROTOCOL_VERSION
             );
             TPCPEnvelope envelope = new TPCPEnvelope(header, payload);
@@ -137,7 +166,10 @@ public class TPCPNode {
         if (handler != null) {
             handler.accept(env);
         } else {
-            dlq.enqueue(env);
+            boolean enqueued = dlq.enqueue(env);
+            if (!enqueued) {
+                System.err.println("[TPCPNode] DLQ full, message dropped: " + env.header.messageId);
+            }
         }
     }
 }

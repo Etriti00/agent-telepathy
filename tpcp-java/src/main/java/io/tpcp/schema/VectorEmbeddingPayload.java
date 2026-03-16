@@ -25,6 +25,8 @@ public class VectorEmbeddingPayload {
     public VectorEmbeddingPayload() {}
 
     public VectorEmbeddingPayload(String modelId, int dimensions, List<Double> vector) {
+        if (dimensions <= 0) throw new IllegalArgumentException("dimensions must be > 0");
+        if (vector != null && vector.size() != dimensions) throw new IllegalArgumentException("vector length must match dimensions");
         this.modelId = modelId;
         this.dimensions = dimensions;
         this.vector = vector;

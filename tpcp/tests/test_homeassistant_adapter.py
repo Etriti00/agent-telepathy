@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
 from tpcp.schemas.envelope import AgentIdentity, Intent, TPCPEnvelope, CRDTSyncPayload
+from tpcp.security.crypto import AgentIdentityManager
 
 # Skip entire module if aiohttp is not installed
 pytest.importorskip("aiohttp", reason="aiohttp not installed; skip HA adapter tests")
@@ -30,6 +31,7 @@ def make_adapter(ha_token: str = "super-secret-token-abc123"):
         identity=make_identity(),
         ha_url="http://homeassistant.local:8123",
         ha_token=ha_token,
+        identity_manager=AgentIdentityManager(auto_save=False),
     )
     return adapter
 

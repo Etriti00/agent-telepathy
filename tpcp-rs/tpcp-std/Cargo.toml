@@ -14,6 +14,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4"] }
 ed25519-dalek = { version = "2", features = ["std"] }
+chrono = "0.4"
 
 [[example]]
 name = "hello"

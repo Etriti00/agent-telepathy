@@ -157,3 +157,9 @@ jobs:
       run: |
         cd tpcp-ts
         npm test
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t tpcp-relay-test ./tpcp

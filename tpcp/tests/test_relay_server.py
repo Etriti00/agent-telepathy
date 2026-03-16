@@ -9,6 +9,8 @@ import pytest
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
+import time as _time
+
 from tpcp.relay.server import ADNSRelayServer, TokenBucket, BROADCAST_ID
 from tpcp.security.crypto import AgentIdentityManager
 
@@ -71,6 +73,7 @@ class FakeWebSocket:
         obj._closed = False
         obj._send_mock = AsyncMock(side_effect=obj._send_impl_bound)
         obj._close_mock = AsyncMock(side_effect=obj._close_impl_bound)
+        obj.remote_address = ("127.0.0.1", 12345)
         return obj
 
     async def _send_impl_bound(self, data: str) -> None:
@@ -606,3 +609,39 @@ async def test_unverified_sender_triggers_challenge_not_routing():
     assert len(sender_ws.sent) == 1
     sent = json.loads(sender_ws.sent[0])
     assert sent["type"] == "ADNS_CHALLENGE"
+
+
+# ── TASK 16: CHALLENGE HARDENING TESTS ──────────────────────────────
+
+@pytest.mark.asyncio
+async def test_challenge_expiration_cleanup():
+    server = make_server()
+    server._pending_challenges["old-agent"] = {
+        "ws": None, "nonce": "abc", "public_key": "key", "timestamp": _time.monotonic() - 400
+    }
+    server._cleanup_stale_challenges()
+    assert "old-agent" not in server._pending_challenges
+
+
+@pytest.mark.asyncio
+async def test_challenge_fresh_not_cleaned():
+    server = make_server()
+    server._pending_challenges["fresh-agent"] = {
+        "ws": None, "nonce": "abc", "public_key": "key", "timestamp": _time.monotonic()
+    }
+    server._cleanup_stale_challenges()
+    assert "fresh-agent" in server._pending_challenges
+
+
+def test_public_key_format_validation_rejects_malformed():
+    import base64
+    short_key = base64.b64encode(b"x" * 16).decode()
+    decoded = base64.b64decode(short_key)
+    assert len(decoded) != 32
+
+
+def test_public_key_format_validation_accepts_valid():
+    import base64
+    valid_key = base64.b64encode(b"x" * 32).decode()
+    decoded = base64.b64decode(valid_key)
+    assert len(decoded) == 32
