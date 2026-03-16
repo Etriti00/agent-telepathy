@@ -30,7 +30,7 @@ impl LWWMap {
             if existing.timestamp_ms > timestamp_ms {
                 return;
             }
-            if existing.timestamp_ms == timestamp_ms && existing.writer_id >= *writer_id {
+            if existing.timestamp_ms == timestamp_ms && existing.writer_id.as_str() >= writer_id {
                 return;
             }
         }
