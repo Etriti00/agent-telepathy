@@ -35,7 +35,8 @@ from websockets.asyncio.server import ServerConnection
 from websockets.datastructures import Headers
 from websockets.http11 import Request, Response as HTTPResponse
 
-BROADCAST_ID = "00000000-0000-0000-0000-000000000000"
+from uuid import UUID
+BROADCAST_ID = str(UUID(int=0))
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ADNS-Relay")
@@ -96,6 +97,9 @@ class ADNSRelayServer:
         # Rate limiters per connection
         self._rate_limiters: Dict[int, TokenBucket] = {}
 
+        # Per-IP challenge rate limiting
+        self._challenge_rate_limits: Dict[str, list] = {}
+
     async def _handle_connection(self, websocket: ServerConnection) -> None:
         agent_id = None
         ws_id = id(websocket)
@@ -138,9 +142,10 @@ class ADNSRelayServer:
                         continue  # Don't route until verified
                     
                     # ── VERIFIED ROUTING ──────────────────────────────────
-                    # Update the connection if this node reconnected
+                    # Connection changed -- require re-authentication
                     if self.registry[sender_id]["ws"] != websocket:
-                        self.registry[sender_id]["ws"] = websocket
+                        await self._initiate_challenge(sender_id, data, websocket)
+                        continue
                     
                     target_id = header.get("receiver_id")
                     null_id = "00000000-0000-0000-0000-000000000000"
@@ -205,34 +210,67 @@ class ADNSRelayServer:
             for aid in agents_to_clean:
                 del self._pending_challenges[aid]
 
+    def _cleanup_stale_challenges(self) -> None:
+        """Remove challenges older than 5 minutes."""
+        now = time.monotonic()
+        stale = [aid for aid, info in self._pending_challenges.items() if now - info.get("timestamp", 0) > 300]
+        for aid in stale:
+            del self._pending_challenges[aid]
+
     async def _initiate_challenge(self, sender_id: str, data: dict, websocket: ServerConnection) -> None:
         """
         Generate a random nonce and challenge the connecting node to prove identity.
         The node must sign the nonce with their private key and return it.
         """
+        # Cleanup stale challenges first
+        self._cleanup_stale_challenges()
+
+        # Per-IP rate limit: max 10 challenges/minute
+        import base64
+        ip = str(websocket.remote_address[0]) if websocket.remote_address else "unknown"
+        now = time.monotonic()
+        if ip not in self._challenge_rate_limits:
+            self._challenge_rate_limits[ip] = []
+        self._challenge_rate_limits[ip] = [t for t in self._challenge_rate_limits[ip] if now - t < 60]
+        if len(self._challenge_rate_limits[ip]) >= 10:
+            logger.warning(f"Challenge rate limit exceeded for IP {ip}")
+            return
+        self._challenge_rate_limits[ip].append(now)
+
         # Extract the claimed public key from the handshake payload
         payload = data.get("payload", {})
         content = payload.get("content", "")
-        
+
         public_key = None
         try:
             identity_data = json.loads(content)
             public_key = identity_data.get("public_key")
         except (json.JSONDecodeError, TypeError):
             pass
-        
+
         if not public_key:
             logger.warning(f"No public key found in handshake from {sender_id}. Cannot challenge.")
             return
-        
+
+        # Validate public key format (Ed25519 = 32 bytes)
+        try:
+            decoded = base64.b64decode(public_key)
+            if len(decoded) != 32:
+                logger.warning(f"Invalid public key length from {sender_id}: {len(decoded)} bytes (expected 32)")
+                return
+        except Exception:
+            logger.warning(f"Invalid base64 public key from {sender_id}")
+            return
+
         # Generate nonce
         nonce = os.urandom(32).hex()
-        
-        # Store pending challenge
+
+        # Store pending challenge with timestamp
         self._pending_challenges[sender_id] = {
             "ws": websocket,
             "nonce": nonce,
-            "public_key": public_key
+            "public_key": public_key,
+            "timestamp": time.monotonic()
         }
         
         # Send challenge to the node
