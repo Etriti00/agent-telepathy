@@ -101,7 +101,9 @@ func (n *TPCPNode) Listen(addr string) error {
 	n.server = &http.Server{Addr: addr, Handler: mux}
 	// Signal that the server is bound and ready to accept connections.
 	close(n.Ready)
+	n.wg.Add(1)
 	go func() {
+		defer n.wg.Done()
 		if err := n.server.Serve(ln); err != nil && err != http.ErrServerClosed {
 			log.Printf("[TPCPNode] server error: %v", err)
 		}

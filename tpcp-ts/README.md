@@ -1,6 +1,6 @@
 # TPCP TypeScript SDK
 
-![Version](https://img.shields.io/badge/version-0.4.0-blue)
+![Version](https://img.shields.io/badge/version-0.4.1-blue)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-green)
 ![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)
 

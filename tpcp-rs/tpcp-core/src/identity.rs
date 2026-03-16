@@ -123,6 +123,64 @@ mod tests {
     }
 
     #[test]
+    fn test_verify_rejects_malformed_public_key() {
+        // Public key must be exactly 32 bytes when decoded. This is 16 bytes.
+        let short_key = general_purpose::STANDARD.encode([0u8; 16]);
+        let payload = b"some payload";
+        let sk = test_signing_key();
+        let sig = sign(&sk, payload);
+        assert!(
+            !verify(&short_key, payload, &sig),
+            "malformed (wrong length) public key must fail verification"
+        );
+    }
+
+    #[test]
+    fn test_verify_rejects_invalid_base64_signature() {
+        let sk = test_signing_key();
+        let pk_b64 = pub_key_b64(&sk);
+        let payload = b"test";
+        assert!(
+            !verify(&pk_b64, payload, "not!!!valid===base64"),
+            "invalid base64 signature must fail verification"
+        );
+    }
+
+    #[test]
+    fn test_verify_rejects_invalid_base64_public_key() {
+        let payload = b"test";
+        assert!(
+            !verify("also-not-base64!!!", payload, "AAAA"),
+            "invalid base64 public key must fail verification"
+        );
+    }
+
+    #[test]
+    fn test_canonical_json_empty_object() {
+        let empty: serde_json::Value = serde_json::json!({});
+        let result = canonical_json(&empty);
+        assert_eq!(core::str::from_utf8(&result).unwrap(), "{}");
+    }
+
+    #[test]
+    fn test_canonical_json_nested_objects() {
+        let nested: serde_json::Value = serde_json::json!({
+            "outer": {"z": 1, "a": 2},
+            "arr": [3, 2, 1]
+        });
+        let result = canonical_json(&nested);
+        let s = core::str::from_utf8(&result).unwrap();
+        // "arr" < "outer" alphabetically
+        let pos_arr = s.find("\"arr\"").unwrap();
+        let pos_outer = s.find("\"outer\"").unwrap();
+        assert!(pos_arr < pos_outer, "keys must be sorted: arr before outer");
+        // Nested keys should also be sorted: "a" < "z"
+        let pos_a = s.find("\"a\"").unwrap();
+        let pos_z = s.find("\"z\"").unwrap();
+        assert!(pos_a < pos_z, "nested keys must be sorted: a before z");
+    }
+
+    #[test]
     fn test_canonical_json_deterministic() {
         // Two JSON objects with the same keys in different insertion order.
         let a: Value = serde_json::json!({"z": 1, "a": 2, "m": 3});

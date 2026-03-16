@@ -27,6 +27,7 @@ import asyncio
 import json
 import os
 import time
+import base64
 import logging
 from typing import Dict, Optional
 
@@ -226,7 +227,6 @@ class ADNSRelayServer:
         self._cleanup_stale_challenges()
 
         # Per-IP rate limit: max 10 challenges/minute
-        import base64
         ip = str(websocket.remote_address[0]) if websocket.remote_address else "unknown"
         now = time.monotonic()
         if ip not in self._challenge_rate_limits:

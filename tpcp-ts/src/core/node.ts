@@ -22,8 +22,10 @@ import { EventEmitter } from 'events';
 
 // Lazy-load WebSocket for browser compatibility. In browsers, globalThis.WebSocket
 // is used. In Node.js, the 'ws' package is required dynamically.
-type WsType = typeof import('ws').default;
-const WS: WsType = (() => {
+import type WsLib from 'ws';
+type WebSocket = WsLib;
+type WsConstructor = typeof WsLib;
+const WS: WsConstructor = (() => {
   if (typeof globalThis !== 'undefined' && (globalThis as any).WebSocket) {
     return (globalThis as any).WebSocket;
   }
@@ -34,7 +36,6 @@ const WS: WsType = (() => {
     throw new Error('WebSocket not available. Install "ws" package for Node.js.');
   }
 })();
-type WebSocket = import('ws').default;
 
 import {
   AgentIdentity,
@@ -137,6 +138,9 @@ class VectorBank {
   }
 
   search(queryVector: number[], topK: number = 5): { payloadId: string; similarity: number; rawText?: string }[] {
+    if (topK <= 0 || !Number.isFinite(topK)) {
+      throw new Error(`topK must be a positive finite number, got ${topK}`);
+    }
     const queryNorm = Math.sqrt(queryVector.reduce((sum, x) => sum + x * x, 0));
     if (queryNorm === 0) return [];
 
@@ -175,7 +179,7 @@ export class TPCPNode extends EventEmitter {
   public identityManager: AgentIdentityManager;
   public messageQueue: MessageQueue;
 
-  private _server?: WebSocket.Server;
+  private _server?: WsLib.Server;
   private _adnsWs?: WebSocket;
   private _adnsRegistered: boolean = false;
   protected _running: boolean = false;
@@ -238,8 +242,13 @@ export class TPCPNode extends EventEmitter {
       });
     });
 
+    this._server.on('error', (err: Error) => {
+      console.error(`[TPCPNode] WebSocket server error: ${err.message}`);
+      this.emit('error', err);
+    });
+
     this._server.on("connection", (ws: WebSocket) => {
-      ws.on("message", async (data: WebSocket.RawData) => {
+      ws.on("message", async (data: WsLib.RawData) => {
         await this._handleInbound(data.toString());
       });
     });
@@ -288,7 +297,7 @@ export class TPCPNode extends EventEmitter {
         await this.broadcastDiscovery();
       });
 
-      ws.on("message", async (data: WebSocket.RawData) => {
+      ws.on("message", async (data: WsLib.RawData) => {
         const raw = data.toString();
         try {
           const parsed = JSON.parse(raw);
@@ -335,7 +344,7 @@ export class TPCPNode extends EventEmitter {
         }
       });
 
-      ws.on("error", (err) => {
+      ws.on("error", (err: Error) => {
         console.error(`A-DNS error: ${err.message}`);
       });
     };
@@ -501,16 +510,16 @@ export class TPCPNode extends EventEmitter {
   private _createConnection(peerId: string, address: string): Promise<WebSocket> {
     const ws = new WS(address);
     return new Promise<WebSocket>((resolve, reject) => {
+      ws.on('close', () => {
+        this._peerConnections.delete(peerId);
+        this.emit('peer:disconnected', peerId);
+      });
+      ws.on('error', reject);
       ws.on('open', () => {
         this._peerConnections.set(peerId, ws);
         this.emit('peer:connected', peerId);
-        ws.on('close', () => {
-          this._peerConnections.delete(peerId);
-          this.emit('peer:disconnected', peerId);
-        });
         resolve(ws);
       });
-      ws.on('error', reject);
     });
   }
 
@@ -559,9 +568,16 @@ export class TPCPNode extends EventEmitter {
 
     let backoff = 1000;
     const maxBackoff = 60000;
+    let retries = 0;
+    const maxRetries = 10;
 
     const attempt = () => {
       if (!this._running || !this.messageQueue.hasMessages(targetId)) return;
+      if (retries >= maxRetries) {
+        console.warn(`[DLQ] Max retries (${maxRetries}) reached for ${targetId}. Giving up.`);
+        return;
+      }
+      retries++;
 
       const ws = new WS(peer.address);
       ws.on('open', () => {

@@ -25,6 +25,25 @@ npm install
 npm run build
 ```
 
+For the Go SDK:
+```bash
+cd tpcp-go
+go mod tidy
+go test ./...
+```
+
+For the Rust SDK:
+```bash
+cd tpcp-rs
+cargo test --workspace
+```
+
+For the Java SDK:
+```bash
+cd tpcp-java
+mvn clean package    # requires Java 21+
+```
+
 ## How to Contribute
 
 1. **Fork** the repository on GitHub
@@ -56,8 +75,13 @@ If your contribution is for your own proprietary enterprise integration, please 
 
 ## Release Process
 
-1. Ensure all tests pass: `cd tpcp && pytest && cd ../tpcp-ts && npm test`
-2. Update version in `tpcp/pyproject.toml` and `tpcp-ts/package.json`
+1. Ensure all SDK tests pass:
+   - `cd tpcp && pytest`
+   - `cd tpcp-ts && npm run build && npm test`
+   - `cd tpcp-go && go test ./...`
+   - `cd tpcp-rs && cargo test --workspace`
+   - `cd tpcp-java && mvn test`
+2. Update version in all SDK manifests (`pyproject.toml`, `package.json`, `Cargo.toml`, `pom.xml`)
 3. Update `CHANGELOG.md`
 4. Commit: `git commit -m "chore: release vX.Y.Z"`
 5. Tag: `git tag vX.Y.Z && git push origin vX.Y.Z`
