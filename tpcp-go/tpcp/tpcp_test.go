@@ -2,6 +2,7 @@ package tpcp
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -201,6 +202,73 @@ func TestSendMessageRejectsInvalidPayload(t *testing.T) {
 	err := node.SendMessage("peer-1", IntentTaskRequest, payload)
 	if err == nil {
 		t.Fatal("expected SendMessage to reject invalid payload")
+	}
+}
+
+// TestDLQEnqueueDrain verifies that an enqueued envelope is returned by Drain.
+func TestDLQEnqueueDrain(t *testing.T) {
+	q := NewDLQ()
+	env := &TPCPEnvelope{
+		Header: MessageHeader{MessageID: "dlq-test-1"},
+	}
+	if !q.Enqueue(env) {
+		t.Fatal("Enqueue returned false; expected true")
+	}
+	drained := q.Drain()
+	if len(drained) != 1 {
+		t.Fatalf("Drain: got %d envelopes, want 1", len(drained))
+	}
+	if drained[0].Header.MessageID != "dlq-test-1" {
+		t.Errorf("Drain: got message ID %q, want %q", drained[0].Header.MessageID, "dlq-test-1")
+	}
+}
+
+// TestDLQOverflow verifies that enqueueing more items than capacity (100) silently
+// drops the excess and Drain returns at most 100 envelopes.
+func TestDLQOverflow(t *testing.T) {
+	q := NewDLQ()
+	const overCapacity = 150
+	for i := 0; i < overCapacity; i++ {
+		q.Enqueue(&TPCPEnvelope{Header: MessageHeader{MessageID: fmt.Sprintf("msg-%d", i)}})
+	}
+	drained := q.Drain()
+	if len(drained) > 100 {
+		t.Errorf("Drain returned %d envelopes; DLQ capacity is 100 so must not exceed 100", len(drained))
+	}
+}
+
+// TestLWWMapSetGet verifies that a value written with Set can be read back with Get.
+func TestLWWMapSetGet(t *testing.T) {
+	m := NewLWWMap()
+	m.Set("key1", "hello", 1000)
+	val, ok := m.Get("key1")
+	if !ok {
+		t.Fatal("Get returned false; expected key to be present")
+	}
+	if val != "hello" {
+		t.Errorf("Get: got %v, want %q", val, "hello")
+	}
+}
+
+// TestLWWMapLastWriterWins verifies that when the same key is written twice,
+// the higher-timestamp value wins.
+func TestLWWMapLastWriterWins(t *testing.T) {
+	m := NewLWWMap()
+	m.Set("counter", "first", 100)
+	m.Set("counter", "second", 200)
+	val, ok := m.Get("counter")
+	if !ok {
+		t.Fatal("Get returned false after two sets")
+	}
+	if val != "second" {
+		t.Errorf("LWW: got %v, want %q — higher timestamp should win", val, "second")
+	}
+
+	// An older timestamp must not overwrite the current value.
+	m.Set("counter", "stale", 50)
+	val, _ = m.Get("counter")
+	if val != "second" {
+		t.Errorf("LWW: older write overwrote newer value; got %v, want %q", val, "second")
 	}
 }
 
