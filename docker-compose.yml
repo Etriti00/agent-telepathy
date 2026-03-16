@@ -18,9 +18,20 @@ services:
       - "8765:8765"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import websockets; print('ok')"]
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.connect(('127.0.0.1',8765)); s.close()"]
       interval: 30s
       timeout: 10s
+      start_period: 5s
       retries: 3
     environment:
       - PYTHONUNBUFFERED=1
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

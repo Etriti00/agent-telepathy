@@ -62,9 +62,13 @@ class ROS2Adapter(BaseFrameworkAdapter):
     Likewise, it translates inbound TPCP task requests into ROS publishers.
     """
 
-    def __init__(self, identity: AgentIdentity, identity_manager=None, ros_node_name: str = "tpcp_bridge"):
+    def __init__(self, identity: AgentIdentity, identity_manager=None, ros_node_name: str = "tpcp_bridge", topics=None):
         super().__init__(identity, identity_manager)
         self.ros_node_name = ros_node_name
+        self._topics = topics or {
+            "telemetry": "/robot/telemetry",
+            "camera": "/robot/camera_front/image_raw",
+        }
         self._ros_node: Optional["ROS2Node"] = None
         self._bridge: Optional["CvBridge"] = None
 
@@ -95,8 +99,8 @@ class ROS2Adapter(BaseFrameworkAdapter):
             raise ValueError("Unsupported raw_output format for Base ROS2 pack_thought.")
 
         envelope = TPCPEnvelope(header=header, payload=payload)
-        if self.identity_manager:
-            envelope.signature = self.identity_manager.sign_payload(payload.model_dump())
+        self._require_identity_manager()
+        envelope.signature = self.identity_manager.sign_payload(payload.model_dump())
         return envelope
 
     def pack_image(self, target_id: UUID, cv_image: Any, caption: str = "ROS2 Camera Frame") -> TPCPEnvelope:
@@ -127,8 +131,8 @@ class ROS2Adapter(BaseFrameworkAdapter):
         )
 
         envelope = TPCPEnvelope(header=header, payload=payload)
-        if self.identity_manager:
-            envelope.signature = self.identity_manager.sign_payload(payload.model_dump())
+        self._require_identity_manager()
+        envelope.signature = self.identity_manager.sign_payload(payload.model_dump())
         return envelope
 
     def start_ros2_spin(self, on_message_callback: Callable[[TPCPEnvelope], None]) -> None:
@@ -145,18 +149,18 @@ class ROS2Adapter(BaseFrameworkAdapter):
         self._ros_node = rclpy.create_node(self.ros_node_name)
         self._bridge = CvBridge()
 
-        # Example: Listen to a generic robot state topic
+        # Listen to a generic robot state topic
         self._ros_node.create_subscription(
             String,
-            '/robot/telemetry',
+            self._topics["telemetry"],
             lambda msg: self._handle_ros_telemetry(msg, on_message_callback),
             10
         )
 
-        # Example: Listen to a camera feed and forward frames to TPCP as Images
+        # Listen to a camera feed and forward frames to TPCP as Images
         self._ros_node.create_subscription(
             ROSImage,
-            '/robot/camera_front/image_raw',
+            self._topics["camera"],
             lambda msg: self._handle_ros_image(msg, on_message_callback),
             10
         )
