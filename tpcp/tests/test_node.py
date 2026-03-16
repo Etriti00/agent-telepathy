@@ -260,3 +260,64 @@ def test_vectorbank_cosine_search():
     assert results[0][1] > 0.99
     # Second should be "mostly-east"
     assert results[1][0] == pid3
+
+
+# ── TASK 6: ENQUEUE_FRONT EVICTION ──────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_dlq_enqueue_front_evicts_newest_when_full():
+    from tpcp.schemas.envelope import MessageHeader, TPCPEnvelope
+
+    q = MessageQueue(max_size_per_peer=2)
+    target = uuid4()
+
+    def _make_env(content: str) -> TPCPEnvelope:
+        return TPCPEnvelope(
+            header=MessageHeader(sender_id=uuid4(), receiver_id=target, intent=Intent.TASK_REQUEST),
+            payload=TextPayload(content=content),
+        )
+
+    e1 = _make_env("first")
+    e2 = _make_env("second")
+    e3 = _make_env("retry")
+    await q.enqueue(target, e1)
+    await q.enqueue(target, e2)
+    # Queue is [e1, e2]. enqueue_front(e3) should evict e2 (newest/back) and insert e3 at front.
+    await q.enqueue_front(target, e3)
+    msgs = await q.drain(target)
+    assert len(msgs) == 2
+    assert msgs[0].payload.content == "retry"
+    assert msgs[1].payload.content == "first"
+
+
+# ── TASK 8: VECTORBANK CONCURRENCY ──────────────────────────────────
+
+import threading
+
+def test_vectorbank_concurrent_access():
+    bank = VectorBank("test-node")
+    errors = []
+    def writer(n):
+        try:
+            for i in range(100):
+                bank.store_vector(uuid4(), [float(i)] * 3, "model")
+        except Exception as e:
+            errors.append(e)
+    threads = [threading.Thread(target=writer, args=(i,)) for i in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert not errors
+    assert bank.total_vectors > 0
+
+
+# ── TASK 9: DEDUP CACHE ORDEREDDICT ─────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_dedup_cache_bounded_cleanup():
+    from collections import OrderedDict
+    mgr = AgentIdentityManager(auto_save=False)
+    identity = AgentIdentity(framework="test", public_key=mgr.get_public_key_string())
+    node = TPCPNode(identity=identity, port=0, identity_manager=mgr)
+    assert isinstance(node._seen_messages, OrderedDict)

@@ -98,34 +98,35 @@ class LWWMap:
         Sets a key to a value in the map.
         If a timestamp is not provided, increments the logical clock.
         """
-        if timestamp is None:
-            self.logical_clock += 1
-            timestamp = self.logical_clock
-            writer_id = self.node_id
-        else:
-            self.logical_clock = max(self.logical_clock, timestamp)
-            if writer_id is None:
+        async with self._lock:
+            if timestamp is None:
+                self.logical_clock += 1
+                timestamp = self.logical_clock
                 writer_id = self.node_id
+            else:
+                self.logical_clock = max(self.logical_clock, timestamp)
+                if writer_id is None:
+                    writer_id = self.node_id
 
-        updated = False
+            updated = False
 
-        if key in self._state:
-            existing_value, existing_ts, existing_writer = self._state[key]
-            
-            if timestamp > existing_ts:
-                self._state[key] = (value, timestamp, writer_id)
-                updated = True
-            elif timestamp == existing_ts:
-                if writer_id > existing_writer:
+            if key in self._state:
+                existing_value, existing_ts, existing_writer = self._state[key]
+
+                if timestamp > existing_ts:
                     self._state[key] = (value, timestamp, writer_id)
                     updated = True
-                elif writer_id == existing_writer:
-                    if json.dumps(value, sort_keys=True, default=str) > json.dumps(existing_value, sort_keys=True, default=str):
+                elif timestamp == existing_ts:
+                    if writer_id > existing_writer:
                         self._state[key] = (value, timestamp, writer_id)
                         updated = True
-        else:
-            self._state[key] = (value, timestamp, writer_id)
-            updated = True
+                    elif writer_id == existing_writer:
+                        if json.dumps(value, sort_keys=True, default=str) > json.dumps(existing_value, sort_keys=True, default=str):
+                            self._state[key] = (value, timestamp, writer_id)
+                            updated = True
+            else:
+                self._state[key] = (value, timestamp, writer_id)
+                updated = True
 
         if updated:
             await self._persist(key, value, timestamp, writer_id)

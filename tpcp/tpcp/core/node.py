@@ -28,6 +28,7 @@ import logging
 from pathlib import Path
 import ssl
 import time
+from collections import OrderedDict
 from typing import Dict, Optional, Callable, Awaitable, Tuple, Type
 from uuid import UUID
 
@@ -126,7 +127,7 @@ class TPCPNode:
         self.message_queue = MessageQueue(max_size_per_peer=500)
 
         # Deduplication Cache (Replay protection)
-        self._seen_messages: Dict[UUID, float] = {}
+        self._seen_messages: OrderedDict[UUID, float] = OrderedDict()
 
         # Pending ACK futures: maps message_id to Future waiting for ACK/NACK
         self._pending_acks: Dict[UUID, asyncio.Future] = {}
@@ -332,10 +333,13 @@ class TPCPNode:
             # ── DEDUPLICATION (REPLAY PROTECTION) ────────────────────────────
             current_time = time.monotonic()
 
-            # TTL-based cleanup: remove entries older than 5 minutes on every message
-            # (prevents unbounded cache growth and stale entries)
+            # TTL-based cleanup: pop oldest entries older than 5 minutes
             cutoff = current_time - 300
-            self._seen_messages = {k: v for k, v in self._seen_messages.items() if v > cutoff}
+            while self._seen_messages:
+                oldest_key, oldest_time = next(iter(self._seen_messages.items()))
+                if oldest_time > cutoff:
+                    break
+                self._seen_messages.pop(oldest_key)
 
             if envelope.header.message_id in self._seen_messages:
                 logger.warning(f"Duplicate message {envelope.header.message_id} detected. Dropping.")

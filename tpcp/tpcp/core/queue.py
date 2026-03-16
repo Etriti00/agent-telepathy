@@ -58,7 +58,7 @@ class MessageQueue:
                 self._dlq[target_id] = deque()
             q = self._dlq[target_id]
             if len(q) >= self._max_size:
-                # Evict oldest message from the back if queue is full
+                # Evict newest message from back to make room for retry at front
                 q.pop()
             q.appendleft(envelope)
 

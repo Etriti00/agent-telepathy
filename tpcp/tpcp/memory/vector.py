@@ -22,6 +22,7 @@ Supports storage, retrieval, and cosine similarity search.
 """
 
 import math
+import threading
 from typing import Dict, List, Optional, Tuple
 from uuid import UUID
 
@@ -36,17 +37,19 @@ class VectorBank:
     def __init__(self, node_id: str):
         self.node_id = node_id
         self._embeddings: Dict[UUID, dict] = {}
+        self._lock = threading.Lock()
 
     def store_vector(self, payload_id: UUID, vector: List[float], model_id: str, raw_text: Optional[str] = None) -> None:
         """Saves a semantic chunk with its embedding vector and metadata."""
         # Pre-compute the norm for fast cosine similarity later
         norm = math.sqrt(sum(x * x for x in vector))
-        self._embeddings[payload_id] = {
-            "vector": vector,
-            "norm": norm,
-            "model_id": model_id,
-            "raw_text_fallback": raw_text
-        }
+        with self._lock:
+            self._embeddings[payload_id] = {
+                "vector": vector,
+                "norm": norm,
+                "model_id": model_id,
+                "raw_text_fallback": raw_text
+            }
 
     def get_vector(self, payload_id: UUID) -> Optional[dict]:
         """Retrieves a stored embedding and its metadata by payload ID."""
@@ -90,29 +93,30 @@ class VectorBank:
         if query_norm == 0:
             return []
         
-        results: List[Tuple[UUID, float, Optional[str]]] = []
-        
-        for pid, entry in self._embeddings.items():
-            stored_vector = entry["vector"]
-            stored_norm = entry["norm"]
-            
-            # Skip if stored vector has zero magnitude
-            if stored_norm == 0:
-                continue
-            
-            # Validate dimensions match
-            if len(stored_vector) != len(query_vector):
-                raise ValueError(f"Dimension mismatch: query is {len(query_vector)}d, stored vector '{pid}' is {len(stored_vector)}d.")
-            
-            # Dot product
-            dot = sum(a * b for a, b in zip(query_vector, stored_vector))
-            similarity = dot / (query_norm * stored_norm)
-            
-            results.append((pid, similarity, entry["raw_text_fallback"]))
-        
-        # Sort by similarity descending, take top-k
-        results.sort(key=lambda x: x[1], reverse=True)
-        return results[:top_k]
+        with self._lock:
+            results: List[Tuple[UUID, float, Optional[str]]] = []
+
+            for pid, entry in self._embeddings.items():
+                stored_vector = entry["vector"]
+                stored_norm = entry["norm"]
+
+                # Skip if stored vector has zero magnitude
+                if stored_norm == 0:
+                    continue
+
+                # Validate dimensions match
+                if len(stored_vector) != len(query_vector):
+                    raise ValueError(f"Dimension mismatch: query is {len(query_vector)}d, stored vector '{pid}' is {len(stored_vector)}d.")
+
+                # Dot product
+                dot = sum(a * b for a, b in zip(query_vector, stored_vector))
+                similarity = dot / (query_norm * stored_norm)
+
+                results.append((pid, similarity, entry["raw_text_fallback"]))
+
+            # Sort by similarity descending, take top-k
+            results.sort(key=lambda x: x[1], reverse=True)
+            return results[:top_k]
 
     @property
     def total_vectors(self) -> int:
