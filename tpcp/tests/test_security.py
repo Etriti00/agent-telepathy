@@ -1,8 +1,10 @@
 import os
 import pytest
-from fastapi.testclient import TestClient
 
 from tpcp.security.crypto import AgentIdentityManager
+
+httpx = pytest.importorskip("httpx", reason="httpx not installed; skip webhook tests")
+from fastapi.testclient import TestClient  # noqa: E402
 
 
 # ── WEBHOOK AUTH TESTS ──────────────────────────────────────────────
