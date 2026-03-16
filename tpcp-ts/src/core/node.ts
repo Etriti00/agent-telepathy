@@ -21,18 +21,26 @@
 import { EventEmitter } from 'events';
 import WebSocket from 'ws';
 
-import { 
-  AgentIdentity, 
-  TPCPEnvelope, 
-  Intent, 
-  MessageHeader, 
-  TPCPEnvelopeSchema, 
+import {
+  AgentIdentity,
+  TPCPEnvelope,
+  Intent,
+  MessageHeader,
+  TPCPEnvelopeSchema,
   CRDTSyncPayload,
   VectorEmbeddingPayload,
   PROTOCOL_VERSION
 } from '../schemas/envelope';
 import { LWWMap } from '../memory/crdt';
 import { AgentIdentityManager } from '../security/crypto';
+
+export interface TPCPNodeEvents {
+  message: (envelope: TPCPEnvelope) => void;
+  error: (error: Error) => void;
+  ready: () => void;
+  'peer:connected': (peerId: string) => void;
+  'peer:disconnected': (peerId: string) => void;
+}
 
 
 // ── MESSAGE QUEUE (DLQ) ──────────────────────────────────────────────
@@ -64,7 +72,11 @@ class MessageQueue {
     if (!this._dlq.has(targetId)) {
       this._dlq.set(targetId, []);
     }
-    this._dlq.get(targetId)!.unshift({ data: serialized, messageId });
+    const q = this._dlq.get(targetId)!;
+    if (q.length >= this._maxSize) {
+      q.pop(); // Evict newest from back to make room for retry at front
+    }
+    q.unshift({ data: serialized, messageId });
   }
 
   dequeueOne(targetId: string): QueuedEnvelope | null {
@@ -152,6 +164,7 @@ export class TPCPNode extends EventEmitter {
   private _adnsRegistered: boolean = false;
   protected _running: boolean = false;
   private _peerConnections: Map<string, WebSocket> = new Map();
+  private _pendingConnections: Map<string, Promise<WebSocket>> = new Map();
 
   constructor(identity: AgentIdentity, host: string = "127.0.0.1", port: number = 8000, adnsUrl?: string) {
     super();
@@ -184,7 +197,14 @@ export class TPCPNode extends EventEmitter {
   public async startListening(): Promise<void> {
     this._server = new WebSocket.Server({ host: this.host, port: this.port });
     this._running = true;
-    
+
+    await new Promise<void>((resolve) => {
+      this._server!.on('listening', () => {
+        this.emit('ready');
+        resolve();
+      });
+    });
+
     this._server.on("connection", (ws: WebSocket) => {
       ws.on("message", async (data: WebSocket.RawData) => {
         await this._handleInbound(data.toString());
@@ -322,6 +342,7 @@ export class TPCPNode extends EventEmitter {
       await this._routeIntent(envelope);
     } catch (e) {
       console.error(`Failed to process inbound message:`, e);
+      this.emit('error', e instanceof Error ? e : new Error(String(e)));
     }
   }
 
@@ -424,6 +445,42 @@ export class TPCPNode extends EventEmitter {
     await this._dispatchEnvelope(targetId, serialized, header.message_id);
   }
 
+  private _createConnection(peerId: string, address: string): Promise<WebSocket> {
+    const ws = new WebSocket(address);
+    return new Promise<WebSocket>((resolve, reject) => {
+      ws.on('open', () => {
+        this._peerConnections.set(peerId, ws);
+        this.emit('peer:connected', peerId);
+        ws.on('close', () => {
+          this._peerConnections.delete(peerId);
+          this.emit('peer:disconnected', peerId);
+        });
+        resolve(ws);
+      });
+      ws.on('error', reject);
+    });
+  }
+
+  private async _getOrCreateConnection(peerId: string, address: string): Promise<WebSocket> {
+    const existing = this._peerConnections.get(peerId);
+    if (existing && existing.readyState === WebSocket.OPEN) {
+      return existing;
+    }
+
+    if (this._pendingConnections.has(peerId)) {
+      return this._pendingConnections.get(peerId)!;
+    }
+
+    const promise = this._createConnection(peerId, address);
+    this._pendingConnections.set(peerId, promise);
+    try {
+      const ws = await promise;
+      return ws;
+    } finally {
+      this._pendingConnections.delete(peerId);
+    }
+  }
+
   private async _dispatchEnvelope(targetId: string, serialized: string, messageId: string): Promise<void> {
     const peer = this.peerRegistry.get(targetId);
     if (!peer) {
@@ -433,15 +490,7 @@ export class TPCPNode extends EventEmitter {
     }
 
     try {
-      let ws = this._peerConnections.get(targetId);
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        ws = new WebSocket(peer.address);
-        await new Promise<void>((resolve, reject) => {
-          ws!.on('open', resolve);
-          ws!.on('error', reject);
-        });
-        this._peerConnections.set(targetId, ws);
-      }
+      const ws = await this._getOrCreateConnection(targetId, peer.address);
       ws.send(serialized);
     } catch (e) {
       console.warn(`Connection to ${targetId} failed. Pushing to DLQ.`);
