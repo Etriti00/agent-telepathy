@@ -169,7 +169,7 @@ impl TPCPNode {
             chunk_info: None,
         };
         let text = serde_json::to_string(&envelope)?;
-        ws_stream.send(Message::Text(text.into())).await?;
+        ws_stream.send(Message::Text(text)).await?;
         ws_stream.close(None).await?;
         Ok(())
     }

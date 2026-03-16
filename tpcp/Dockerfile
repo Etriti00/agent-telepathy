@@ -5,6 +5,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Pull latest security patches from upstream Debian
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
+
 # Copy and install package (core only, no dev/edge extras needed for relay)
 COPY pyproject.toml README.md ./
 COPY tpcp/ ./tpcp/
