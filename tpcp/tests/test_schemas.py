@@ -6,6 +6,8 @@ from pydantic import ValidationError
 
 from tpcp.schemas.envelope import (
     AgentIdentity,
+    AckInfo,
+    ChunkInfo,
     Intent,
     MessageHeader,
     TextPayload,
@@ -133,3 +135,22 @@ def test_telemetry_quality_unknown_warns(caplog):
     with caplog.at_level(logging.WARNING, logger="tpcp.schemas.envelope"):
         tr = TelemetryReading(value=1.0, timestamp_ms=1000, quality="Unknown")
     assert tr.quality == "Unknown"
+
+
+# ── AckInfo & ChunkInfo TESTS ──────────────────────────────────────
+
+def test_ack_info_serialization():
+    from uuid import uuid4
+    mid = uuid4()
+    ack = AckInfo(acked_message_id=mid)
+    d = ack.model_dump()
+    assert d["acked_message_id"] == mid
+
+
+def test_chunk_info_serialization():
+    from uuid import uuid4
+    tid = uuid4()
+    ci = ChunkInfo(chunk_index=0, total_chunks=5, transfer_id=tid)
+    d = ci.model_dump()
+    assert d["chunk_index"] == 0
+    assert d["total_chunks"] == 5
