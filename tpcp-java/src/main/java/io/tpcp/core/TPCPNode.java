@@ -41,6 +41,8 @@ public class TPCPNode {
     private final ConcurrentHashMap<String, WebSocket> peers = new ConcurrentHashMap<>();
     /** Maps agent_id → base64 public key for inbound signature verification. */
     private final ConcurrentHashMap<String, String> peerKeys = new ConcurrentHashMap<>();
+    /** Tracks seen message IDs → receipt timestamp (ms) for replay protection. */
+    private final ConcurrentHashMap<String, Long> seenMessages = new ConcurrentHashMap<>();
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     /** Convenience constructor with default dlqCapacity=100 and defaultTtl=30. */
@@ -85,8 +87,18 @@ public class TPCPNode {
             public void onMessage(WebSocket ws, String text) {
                 try {
                     TPCPEnvelope env = MAPPER.readValue(text, TPCPEnvelope.class);
+                    // Replay protection: drop duplicate message IDs within the 5-minute window.
+                    if (env.header != null && env.header.messageId != null) {
+                        if (seenMessages.putIfAbsent(env.header.messageId, System.currentTimeMillis()) != null) {
+                            return; // duplicate
+                        }
+                        // Cleanup old entries
+                        long cutoff = System.currentTimeMillis() - 300_000;
+                        seenMessages.entrySet().removeIf(e -> e.getValue() < cutoff);
+                    }
                     // Verify inbound signature for all messages from registered peers.
-                    // Fail-closed: known peers must always provide a valid signature.
+                    // Fail-closed: known peers must always provide a valid signature;
+                    // messages that carry a signature but whose sender is unknown are also dropped.
                     if (env.header != null && env.header.senderId != null) {
                         String pubKey = peerKeys.get(env.header.senderId);
                         if (pubKey != null) {
@@ -97,6 +109,11 @@ public class TPCPNode {
                                 // Drop — invalid or missing signature from a known peer.
                                 return;
                             }
+                        } else if (env.signature != null && !env.signature.isEmpty()) {
+                            // Fail-closed: unknown sender presents a signature — drop.
+                            System.err.println("[TPCPNode] dropping signed message from unknown peer: "
+                                    + env.header.senderId);
+                            return;
                         }
                     }
                     dispatch(env);
