@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.tpcp.schema.*;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class SchemaTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -104,5 +105,23 @@ class SchemaTest {
         assertEquals(0, deserialized.chunkInfo.chunkIndex);
         assertEquals(3, deserialized.chunkInfo.totalChunks);
         assertEquals("xfer-100", deserialized.chunkInfo.transferId);
+    }
+
+    @Test
+    void textPayloadRejectsNullContent() {
+        assertThrows(IllegalArgumentException.class,
+            () -> new TextPayload(null, "en"));
+    }
+
+    @Test
+    void vectorEmbeddingRejectsZeroDimensions() {
+        assertThrows(IllegalArgumentException.class,
+            () -> new VectorEmbeddingPayload("model", 0, java.util.List.of()));
+    }
+
+    @Test
+    void telemetryRejectsEmptySensorId() {
+        assertThrows(IllegalArgumentException.class,
+            () -> new TelemetryPayload("", "rpm", java.util.List.of(), "opcua"));
     }
 }

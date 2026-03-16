@@ -16,10 +16,12 @@ public class TextPayload {
     public TextPayload() {}
 
     public TextPayload(String content) {
+        if (content == null || content.isEmpty()) throw new IllegalArgumentException("content must not be null or empty");
         this.content = content;
     }
 
     public TextPayload(String content, String language) {
+        if (content == null || content.isEmpty()) throw new IllegalArgumentException("content must not be null or empty");
         this.content = content;
         this.language = language;
     }
