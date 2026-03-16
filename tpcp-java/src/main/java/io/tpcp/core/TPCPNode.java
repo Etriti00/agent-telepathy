@@ -25,7 +25,7 @@ import java.util.function.Consumer;
  *   TPCPNode node = new TPCPNode(identity, mgr);
  *   node.registerHandler(Intent.TASK_REQUEST, env -> System.out.println("Task: " + env.payload));
  *   node.connect("ws://other-agent:8765").join();
- *   node.sendMessage("ws://other-agent:8765", Intent.HANDSHAKE,
+ *   node.sendMessage("ws://other-agent:8765", "other-agent-id", Intent.HANDSHAKE,
  *       mapper.valueToTree(new TextPayload("hello")));
  * }</pre>
  */
@@ -130,8 +130,12 @@ public class TPCPNode {
         return future;
     }
 
-    /** Sends a message to a peer by URL. */
-    public void sendMessage(String peerUrl, Intent intent, JsonNode payload) {
+    /**
+     * Sends a message to a peer by connection URL.
+     * @param peerUrl the WebSocket URL used as connection key
+     * @param receiverId the target agent's agent_id (used in envelope header)
+     */
+    public void sendMessage(String peerUrl, String receiverId, Intent intent, JsonNode payload) {
         WebSocket ws = peers.get(peerUrl);
         if (ws == null) throw new IllegalStateException("Not connected to: " + peerUrl);
         try {
@@ -139,7 +143,7 @@ public class TPCPNode {
                 UUID.randomUUID().toString(),
                 Instant.now().toString(),
                 identity.agentId,
-                peerUrl,
+                receiverId,
                 intent,
                 defaultTtl,
                 Constants.PROTOCOL_VERSION

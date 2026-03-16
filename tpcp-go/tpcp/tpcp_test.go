@@ -199,7 +199,7 @@ func TestSendMessageRejectsInvalidPayload(t *testing.T) {
 	identity := &AgentIdentity{AgentID: "test-node", Framework: "test-fw"}
 	node := NewTPCPNode(identity, nil)
 	payload := &TextPayload{PayloadType: "text", Content: ""}
-	err := node.SendMessage("peer-1", IntentTaskRequest, payload)
+	err := node.SendMessage("peer-1", "target-agent", IntentTaskRequest, payload)
 	if err == nil {
 		t.Fatal("expected SendMessage to reject invalid payload")
 	}

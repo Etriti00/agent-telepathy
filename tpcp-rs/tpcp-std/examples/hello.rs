@@ -35,6 +35,7 @@ async fn main() {
 
     client.send_message(
         "ws://127.0.0.1:9001",
+        "server-001",
         Intent::Handshake,
         serde_json::json!({"payload_type": "text", "content": "hello from Rust client"}),
     ).await.expect("send failed");

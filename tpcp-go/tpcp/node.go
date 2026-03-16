@@ -158,8 +158,10 @@ func (n *TPCPNode) Connect(peerURL string) error {
 }
 
 // SendMessage sends a message with the given intent and payload to a peer.
+// peerID is the connection key (URL or remote address).
+// receiverID is the agent_id of the target agent (used in the envelope header).
 // payload must be JSON-serializable.
-func (n *TPCPNode) SendMessage(peerID string, intent Intent, payload interface{}) error {
+func (n *TPCPNode) SendMessage(peerID string, receiverID string, intent Intent, payload interface{}) error {
 	if v, ok := payload.(Validatable); ok {
 		if err := v.Validate(); err != nil {
 			return fmt.Errorf("payload validation: %w", err)
@@ -183,7 +185,7 @@ func (n *TPCPNode) SendMessage(peerID string, intent Intent, payload interface{}
 			MessageID:       randomUUID(),
 			Timestamp:       time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
 			SenderID:        n.Identity.AgentID,
-			ReceiverID:      peerID,
+			ReceiverID:      receiverID,
 			Intent:          intent,
 			TTL:             30,
 			ProtocolVersion: PROTOCOL_VERSION,
@@ -208,13 +210,15 @@ func (n *TPCPNode) SendMessage(peerID string, intent Intent, payload interface{}
 }
 
 // Stop shuts down the WebSocket server and closes all peer connections.
+// Connections are closed here and the peers map is replaced so that readLoop
+// defers see an empty map and skip the redundant Close().
 func (n *TPCPNode) Stop() error {
 	close(n.done)
 	n.peersMu.Lock()
-	for id, conn := range n.peers {
+	for _, conn := range n.peers {
 		conn.Close()
-		delete(n.peers, id)
 	}
+	n.peers = make(map[string]*websocket.Conn)
 	n.peersMu.Unlock()
 	n.wg.Wait()
 	if n.server != nil {
@@ -226,9 +230,11 @@ func (n *TPCPNode) Stop() error {
 func (n *TPCPNode) readLoop(peerID string, conn *websocket.Conn) {
 	defer n.wg.Done()
 	defer func() {
-		conn.Close()
 		n.peersMu.Lock()
-		delete(n.peers, peerID)
+		if _, exists := n.peers[peerID]; exists {
+			conn.Close()
+			delete(n.peers, peerID)
+		}
 		n.peersMu.Unlock()
 	}()
 	for {
