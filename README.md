@@ -157,6 +157,117 @@ node.on("onVectorSync", ({ modelId, dimensions }) => {
 await node.startListening();
 ```
 
+### Go — High-performance microservices
+
+```bash
+cd tpcp-go && go mod tidy
+```
+
+```go
+package main
+
+import (
+	"fmt"
+	"github.com/tpcp-protocol/tpcp-go/tpcp"
+)
+
+func main() {
+	// Generate a cryptographic identity (Ed25519 keypair)
+	identity, privKey, _ := tpcp.GenerateIdentity("GoService")
+	node := tpcp.NewTPCPNode(identity, privKey)
+
+	// Handle incoming task requests
+	node.RegisterHandler(tpcp.IntentTaskRequest, func(env *tpcp.TPCPEnvelope) {
+		fmt.Printf("Received task from %s\n", env.Header.SenderID)
+	})
+
+	// Start listening for peer connections
+	go node.Listen(":9000")
+	<-node.Ready
+
+	// Connect to another agent and send a message
+	node.Connect("ws://localhost:8000")
+	node.SendMessage("ws://localhost:8000", tpcp.IntentTaskRequest,
+		tpcp.NewTextPayload("Analyze dataset"))
+
+	select {} // Block forever
+}
+```
+
+### Rust — Embedded and systems agents
+
+```bash
+cd tpcp-rs && cargo build
+```
+
+```rust
+use tpcp_std::{TPCPNode, AgentIdentity, Intent};
+use serde_json::json;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let identity = AgentIdentity {
+        agent_id: uuid::Uuid::new_v4().to_string(),
+        framework: "RustAgent".into(),
+        public_key: "".into(),
+        capabilities: vec![],
+        modality: vec!["text".into()],
+    };
+
+    let node = TPCPNode::new(identity);
+
+    // Register a handler for incoming messages
+    node.register_handler(Intent::TaskRequest, |envelope| {
+        println!("Got task: {:?}", envelope.payload);
+    }).await;
+
+    // Send a signed message to a peer
+    node.send_message(
+        "ws://127.0.0.1:8000",
+        Intent::TaskRequest,
+        json!({"payload_type": "text", "content": "Process sensor data"}),
+    ).await?;
+
+    Ok(())
+}
+```
+
+### Java — Enterprise integration
+
+```bash
+cd tpcp-java && mvn compile
+```
+
+```java
+import io.tpcp.core.TPCPNode;
+import io.tpcp.core.IdentityManager;
+import io.tpcp.schema.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+public class Main {
+    public static void main(String[] args) throws Exception {
+        // Generate identity with Ed25519 keypair
+        IdentityManager im = new IdentityManager();
+        AgentIdentity identity = im.createIdentity("JavaService");
+
+        TPCPNode node = new TPCPNode(identity, im);
+
+        // Handle incoming messages
+        node.registerHandler(Intent.TASK_REQUEST, envelope -> {
+            System.out.println("Task from: " + envelope.header.senderId);
+        });
+
+        // Connect to a peer and send a message
+        node.connect("ws://localhost:8000").join();
+
+        ObjectMapper mapper = new ObjectMapper();
+        TextPayload payload = new TextPayload("Generate quarterly report");
+        node.sendMessage("ws://localhost:8000",
+            Intent.TASK_REQUEST, mapper.valueToTree(payload));
+    }
+}
+```
+
 ### Run the demos
 
 ```bash
