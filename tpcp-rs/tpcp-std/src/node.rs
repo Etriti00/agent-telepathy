@@ -24,6 +24,8 @@ pub struct TPCPNode {
     /// Known peer public keys: agent_id → base64-encoded public key.
     /// Inbound messages from registered peers are signature-verified before dispatch.
     peer_keys: Arc<RwLock<HashMap<String, String>>>,
+    /// Replay-protection window: message_id → unix timestamp (seconds) of first receipt.
+    seen_messages: Arc<RwLock<HashMap<String, i64>>>,
     /// Maximum number of concurrent inbound WebSocket connections.
     max_connections: usize,
     /// Current count of active inbound connections.
@@ -40,6 +42,7 @@ impl TPCPNode {
             handlers: Arc::new(RwLock::new(HashMap::new())),
             signing_key: None,
             peer_keys: Arc::new(RwLock::new(HashMap::new())),
+            seen_messages: Arc::new(RwLock::new(HashMap::new())),
             max_connections: 100,
             active_connections: Arc::new(AtomicUsize::new(0)),
         }
@@ -54,6 +57,7 @@ impl TPCPNode {
             handlers: Arc::new(RwLock::new(HashMap::new())),
             signing_key: Some(Arc::new(key)),
             peer_keys: Arc::new(RwLock::new(HashMap::new())),
+            seen_messages: Arc::new(RwLock::new(HashMap::new())),
             max_connections: 100,
             active_connections: Arc::new(AtomicUsize::new(0)),
         }
@@ -79,11 +83,12 @@ impl TPCPNode {
         let handlers = Arc::clone(&self.handlers);
         let dlq = Arc::clone(&self.dlq);
         let peer_keys = Arc::clone(&self.peer_keys);
+        let seen_messages = Arc::clone(&self.seen_messages);
         tokio::spawn(async move {
             while let Some(Ok(msg)) = read.next().await {
                 if let Message::Text(text) = msg {
                     if let Ok(env) = serde_json::from_str::<TPCPEnvelope>(&text) {
-                        Self::dispatch_env(env, &handlers, &dlq, &peer_keys).await;
+                        Self::dispatch_env(env, &handlers, &dlq, &peer_keys, &seen_messages).await;
                     }
                 }
             }
@@ -97,6 +102,7 @@ impl TPCPNode {
         let handlers = Arc::clone(&self.handlers);
         let dlq = Arc::clone(&self.dlq);
         let peer_keys = Arc::clone(&self.peer_keys);
+        let seen_messages = Arc::clone(&self.seen_messages);
         let max_connections = self.max_connections;
         let active_connections = Arc::clone(&self.active_connections);
         tokio::spawn(async move {
@@ -117,13 +123,14 @@ impl TPCPNode {
                 let handlers = Arc::clone(&handlers);
                 let dlq = Arc::clone(&dlq);
                 let peer_keys = Arc::clone(&peer_keys);
+                let seen_messages = Arc::clone(&seen_messages);
                 let active_connections_inner = Arc::clone(&active_connections);
                 active_connections_inner.fetch_add(1, Ordering::AcqRel);
                 tokio::spawn(async move {
                     while let Some(Ok(msg)) = read.next().await {
                         if let Message::Text(text) = msg {
                             if let Ok(env) = serde_json::from_str::<TPCPEnvelope>(&text) {
-                                Self::dispatch_env(env, &handlers, &dlq, &peer_keys).await;
+                                Self::dispatch_env(env, &handlers, &dlq, &peer_keys, &seen_messages).await;
                             }
                         }
                     }
@@ -172,9 +179,25 @@ impl TPCPNode {
         handlers: &RwLock<HashMap<Intent, HandlerFn>>,
         dlq: &DLQ,
         peer_keys: &RwLock<HashMap<String, String>>,
+        seen_messages: &RwLock<HashMap<String, i64>>,
     ) {
-        // Verify signature if the sender's public key is registered.
+        // --- Signature enforcement ---
+        // If the envelope carries a non-empty signature, the sender's public key
+        // MUST be registered. Fail closed: unknown-peer signed messages go to DLQ.
+        let has_signature = env.signature.as_deref().map(|s| !s.is_empty()).unwrap_or(false);
         let sender_key = peer_keys.read().await.get(&env.header.sender_id).cloned();
+
+        if has_signature && sender_key.is_none() {
+            eprintln!(
+                "[TPCPNode] signed envelope from unknown peer '{}' (message_id: {}) — routing to DLQ",
+                env.header.sender_id, env.header.message_id
+            );
+            if !dlq.enqueue(env) {
+                eprintln!("[TPCPNode] DLQ full — dropping signed-unknown-peer envelope");
+            }
+            return;
+        }
+
         if let Some(pub_key_b64) = sender_key {
             let canonical = canonical_json(&env.payload);
             let sig_ok = env.signature.as_deref()
@@ -187,6 +210,22 @@ impl TPCPNode {
                 }
                 return;
             }
+        }
+
+        // --- Replay protection ---
+        let now = chrono::Utc::now().timestamp();
+        let message_id = env.header.message_id.clone();
+        {
+            let mut seen = seen_messages.write().await;
+            // Evict entries older than 300 seconds.
+            seen.retain(|_, &mut ts| now - ts < 300);
+            // Check for duplicate.
+            if seen.contains_key(&message_id) {
+                // Silently drop replayed messages.
+                return;
+            }
+            // Record first-seen timestamp.
+            seen.insert(message_id, now);
         }
 
         let handler = handlers.read().await.get(&env.header.intent).cloned();
