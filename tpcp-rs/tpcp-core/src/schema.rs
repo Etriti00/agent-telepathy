@@ -1,5 +1,6 @@
 use alloc::{string::String, vec::Vec, vec};
 use alloc::collections::BTreeMap;
+use base64::{Engine as _, engine::general_purpose};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -118,6 +119,13 @@ impl TextPayload {
             language: "en".into(),
         }
     }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if self.content.is_empty() {
+            return Err("content must not be empty".into());
+        }
+        Ok(())
+    }
 }
 
 /// Semantic vector embedding payload.
@@ -140,6 +148,23 @@ impl VectorEmbeddingPayload {
             vector,
             raw_text_fallback: None,
         }
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if self.model_id.is_empty() {
+            return Err("model_id must not be empty".into());
+        }
+        if self.dimensions == 0 {
+            return Err("dimensions must be greater than zero".into());
+        }
+        if self.vector.len() != self.dimensions as usize {
+            return Err(alloc::format!(
+                "vector length {} does not match dimensions {}",
+                self.vector.len(),
+                self.dimensions
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -191,6 +216,22 @@ impl ImagePayload {
             width: None, height: None, source_model: None, caption: None,
         }
     }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.mime_type.starts_with("image/") {
+            return Err(alloc::format!(
+                "mime_type must start with 'image/', got '{}'",
+                self.mime_type
+            ));
+        }
+        if self.data_base64.is_empty() {
+            return Err("data_base64 must not be empty".into());
+        }
+        general_purpose::STANDARD
+            .decode(&self.data_base64)
+            .map_err(|e| alloc::format!("data_base64 is not valid base64: {}", e))?;
+        Ok(())
+    }
 }
 
 /// Audio data payload.
@@ -220,6 +261,22 @@ impl AudioPayload {
             mime_type: mime_type.into(),
             sample_rate: None, duration_seconds: None, source_model: None, transcript: None,
         }
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.mime_type.starts_with("audio/") {
+            return Err(alloc::format!(
+                "mime_type must start with 'audio/', got '{}'",
+                self.mime_type
+            ));
+        }
+        if self.data_base64.is_empty() {
+            return Err("data_base64 must not be empty".into());
+        }
+        general_purpose::STANDARD
+            .decode(&self.data_base64)
+            .map_err(|e| alloc::format!("data_base64 is not valid base64: {}", e))?;
+        Ok(())
     }
 }
 
@@ -256,6 +313,22 @@ impl VideoPayload {
             fps: None, source_model: None, description: None,
         }
     }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.mime_type.starts_with("video/") {
+            return Err(alloc::format!(
+                "mime_type must start with 'video/', got '{}'",
+                self.mime_type
+            ));
+        }
+        if self.data_base64.is_empty() {
+            return Err("data_base64 must not be empty".into());
+        }
+        general_purpose::STANDARD
+            .decode(&self.data_base64)
+            .map_err(|e| alloc::format!("data_base64 is not valid base64: {}", e))?;
+        Ok(())
+    }
 }
 
 /// Generic binary data payload.
@@ -281,6 +354,19 @@ impl BinaryPayload {
             mime_type: mime_type.into(),
             filename: None, description: None,
         }
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if self.mime_type.is_empty() {
+            return Err("mime_type must not be empty".into());
+        }
+        if self.data_base64.is_empty() {
+            return Err("data_base64 must not be empty".into());
+        }
+        general_purpose::STANDARD
+            .decode(&self.data_base64)
+            .map_err(|e| alloc::format!("data_base64 is not valid base64: {}", e))?;
+        Ok(())
     }
 }
 
@@ -313,6 +399,19 @@ impl TelemetryPayload {
             readings,
             source_protocol: source_protocol.into(),
         }
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if self.sensor_id.is_empty() {
+            return Err("sensor_id must not be empty".into());
+        }
+        if self.unit.is_empty() {
+            return Err("unit must not be empty".into());
+        }
+        if self.readings.is_empty() {
+            return Err("readings must not be empty".into());
+        }
+        Ok(())
     }
 }
 
@@ -395,5 +494,146 @@ mod tests {
         assert_eq!(parsed.sensor_id, "sensor_1");
         assert_eq!(parsed.readings.len(), 1);
         assert_eq!(parsed.readings[0].value, 42.5);
+    }
+}
+
+#[cfg(test)]
+mod validation_tests {
+    use super::*;
+
+    #[test]
+    fn text_payload_rejects_empty() {
+        let p = TextPayload { payload_type: "text".into(), content: "".into(), language: "en".into() };
+        assert!(p.validate().is_err());
+    }
+
+    #[test]
+    fn text_payload_accepts_nonempty() {
+        let p = TextPayload { payload_type: "text".into(), content: "hello".into(), language: "en".into() };
+        assert!(p.validate().is_ok());
+    }
+
+    #[test]
+    fn vector_rejects_dimension_mismatch() {
+        let p = VectorEmbeddingPayload {
+            payload_type: "vector_embedding".into(),
+            model_id: "test".into(),
+            dimensions: 3,
+            vector: vec![1.0, 2.0],
+            raw_text_fallback: None,
+        };
+        assert!(p.validate().is_err());
+    }
+
+    #[test]
+    fn vector_accepts_matching_dimensions() {
+        let p = VectorEmbeddingPayload {
+            payload_type: "vector_embedding".into(),
+            model_id: "test".into(),
+            dimensions: 3,
+            vector: vec![1.0, 2.0, 3.0],
+            raw_text_fallback: None,
+        };
+        assert!(p.validate().is_ok());
+    }
+
+    #[test]
+    fn image_payload_rejects_bad_mime() {
+        let p = ImagePayload::new("aGVsbG8=", "text/plain");
+        assert!(p.validate().is_err());
+    }
+
+    #[test]
+    fn image_payload_rejects_invalid_base64() {
+        let p = ImagePayload::new("not!!valid@@base64", "image/png");
+        assert!(p.validate().is_err());
+    }
+
+    #[test]
+    fn image_payload_accepts_valid() {
+        // "hello" base64-encoded
+        let p = ImagePayload::new("aGVsbG8=", "image/png");
+        assert!(p.validate().is_ok());
+    }
+
+    #[test]
+    fn audio_payload_rejects_bad_mime() {
+        let p = AudioPayload::new("aGVsbG8=", "image/png");
+        assert!(p.validate().is_err());
+    }
+
+    #[test]
+    fn audio_payload_accepts_valid() {
+        let p = AudioPayload::new("aGVsbG8=", "audio/wav");
+        assert!(p.validate().is_ok());
+    }
+
+    #[test]
+    fn video_payload_rejects_bad_mime() {
+        let p = VideoPayload::new("aGVsbG8=", "audio/wav");
+        assert!(p.validate().is_err());
+    }
+
+    #[test]
+    fn video_payload_accepts_valid() {
+        let p = VideoPayload::new("aGVsbG8=", "video/mp4");
+        assert!(p.validate().is_ok());
+    }
+
+    #[test]
+    fn binary_payload_rejects_empty_data() {
+        let p = BinaryPayload::new("", "application/octet-stream");
+        assert!(p.validate().is_err());
+    }
+
+    #[test]
+    fn binary_payload_accepts_valid() {
+        let p = BinaryPayload::new("aGVsbG8=", "application/octet-stream");
+        assert!(p.validate().is_ok());
+    }
+
+    #[test]
+    fn telemetry_rejects_empty_sensor_id() {
+        let p = TelemetryPayload {
+            payload_type: "telemetry".into(),
+            sensor_id: "".into(),
+            unit: "celsius".into(),
+            readings: vec![TelemetryReading { value: 1.0, timestamp_ms: 0, quality: None }],
+            source_protocol: "opcua".into(),
+        };
+        assert!(p.validate().is_err());
+    }
+
+    #[test]
+    fn telemetry_rejects_empty_unit() {
+        let p = TelemetryPayload {
+            payload_type: "telemetry".into(),
+            sensor_id: "s1".into(),
+            unit: "".into(),
+            readings: vec![TelemetryReading { value: 1.0, timestamp_ms: 0, quality: None }],
+            source_protocol: "opcua".into(),
+        };
+        assert!(p.validate().is_err());
+    }
+
+    #[test]
+    fn telemetry_rejects_empty_readings() {
+        let p = TelemetryPayload {
+            payload_type: "telemetry".into(),
+            sensor_id: "s1".into(),
+            unit: "celsius".into(),
+            readings: vec![],
+            source_protocol: "opcua".into(),
+        };
+        assert!(p.validate().is_err());
+    }
+
+    #[test]
+    fn telemetry_accepts_valid() {
+        let p = TelemetryPayload::new(
+            "sensor_1", "celsius", "opcua",
+            vec![TelemetryReading { value: 42.5, timestamp_ms: 1000, quality: None }],
+        );
+        assert!(p.validate().is_ok());
     }
 }
