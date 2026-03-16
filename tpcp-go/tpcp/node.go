@@ -16,6 +16,11 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
+// Validatable is implemented by payload types that can self-validate.
+type Validatable interface {
+	Validate() error
+}
+
 // TPCPNode is a TPCP agent node that can send and receive messages over WebSocket.
 type TPCPNode struct {
 	Identity *AgentIdentity
@@ -108,6 +113,12 @@ func (n *TPCPNode) Connect(peerURL string) error {
 // SendMessage sends a message with the given intent and payload to a peer.
 // payload must be JSON-serializable.
 func (n *TPCPNode) SendMessage(peerID string, intent Intent, payload interface{}) error {
+	if v, ok := payload.(Validatable); ok {
+		if err := v.Validate(); err != nil {
+			return fmt.Errorf("payload validation: %w", err)
+		}
+	}
+
 	n.peersMu.RLock()
 	conn, ok := n.peers[peerID]
 	n.peersMu.RUnlock()

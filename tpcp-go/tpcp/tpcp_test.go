@@ -152,6 +152,58 @@ func TestMessageHeaderJSONFields(t *testing.T) {
 	}
 }
 
+// TestTextPayloadValidateRejectsEmpty verifies that an empty TextPayload fails validation.
+func TestTextPayloadValidateRejectsEmpty(t *testing.T) {
+	p := TextPayload{PayloadType: "text", Content: ""}
+	if err := p.Validate(); err == nil {
+		t.Fatal("expected error for empty content")
+	}
+}
+
+// TestTextPayloadValidateAcceptsNonEmpty verifies that a non-empty TextPayload passes validation.
+func TestTextPayloadValidateAcceptsNonEmpty(t *testing.T) {
+	p := TextPayload{PayloadType: "text", Content: "hello"}
+	if err := p.Validate(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestVectorEmbeddingPayloadValidateDimensionMismatch verifies that a vector with wrong length fails.
+func TestVectorEmbeddingPayloadValidateDimensionMismatch(t *testing.T) {
+	p := VectorEmbeddingPayload{PayloadType: "vector_embedding", ModelID: "test", Dimensions: 3, Vector: []float64{1, 2}}
+	if err := p.Validate(); err == nil {
+		t.Fatal("expected dimension mismatch error")
+	}
+}
+
+// TestImagePayloadValidateRejectsInvalidBase64 verifies that invalid base64 fails validation.
+func TestImagePayloadValidateRejectsInvalidBase64(t *testing.T) {
+	p := ImagePayload{PayloadType: "image", DataBase64: "not-base64!!!", MimeType: "image/png"}
+	if err := p.Validate(); err == nil {
+		t.Fatal("expected base64 validation error")
+	}
+}
+
+// TestTelemetryPayloadValidateRejectsEmptyReadings verifies that empty readings slice fails.
+func TestTelemetryPayloadValidateRejectsEmptyReadings(t *testing.T) {
+	p := TelemetryPayload{PayloadType: "telemetry", SensorID: "s1", Unit: "rpm", Readings: []TelemetryReading{}, SourceProtocol: "opcua"}
+	if err := p.Validate(); err == nil {
+		t.Fatal("expected empty readings error")
+	}
+}
+
+// TestSendMessageRejectsInvalidPayload verifies that SendMessage returns an error for an invalid payload
+// before attempting peer lookup.
+func TestSendMessageRejectsInvalidPayload(t *testing.T) {
+	identity := &AgentIdentity{AgentID: "test-node", Framework: "test-fw"}
+	node := NewTPCPNode(identity, nil)
+	payload := &TextPayload{PayloadType: "text", Content: ""}
+	err := node.SendMessage("peer-1", IntentTaskRequest, payload)
+	if err == nil {
+		t.Fatal("expected SendMessage to reject invalid payload")
+	}
+}
+
 // TestTPCPEnvelopeAckChunkJSON verifies that AckInfo and ChunkInfo survive
 // a JSON marshal/unmarshal round-trip on TPCPEnvelope.
 func TestTPCPEnvelopeAckChunkJSON(t *testing.T) {

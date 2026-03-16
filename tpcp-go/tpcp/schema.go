@@ -1,7 +1,11 @@
 // Package tpcp implements the Telepathy Communication Protocol Go SDK.
 package tpcp
 
-import "encoding/json"
+import (
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+)
 
 // PROTOCOL_VERSION is the TPCP version implemented by this SDK.
 const PROTOCOL_VERSION = "0.4.0"
@@ -225,4 +229,80 @@ func NewTelemetryPayload(sensorID, unit, sourceProtocol string, readings []Telem
 		Readings:       readings,
 		SourceProtocol: sourceProtocol,
 	}
+}
+
+// --- Validate() methods ---
+
+// Validate checks that TextPayload has non-empty content.
+func (p *TextPayload) Validate() error {
+	if p.Content == "" {
+		return fmt.Errorf("TextPayload: content must not be empty")
+	}
+	return nil
+}
+
+// Validate checks that VectorEmbeddingPayload has consistent dimensions and vector length.
+func (p *VectorEmbeddingPayload) Validate() error {
+	if p.Dimensions <= 0 {
+		return fmt.Errorf("VectorEmbeddingPayload: dimensions must be > 0")
+	}
+	if len(p.Vector) != p.Dimensions {
+		return fmt.Errorf("VectorEmbeddingPayload: vector length %d != dimensions %d", len(p.Vector), p.Dimensions)
+	}
+	return nil
+}
+
+// Validate checks that ImagePayload has valid base64 data and an image/ mime type.
+func (p *ImagePayload) Validate() error {
+	if _, err := base64.StdEncoding.DecodeString(p.DataBase64); err != nil {
+		return fmt.Errorf("ImagePayload: invalid base64: %w", err)
+	}
+	if len(p.MimeType) < 6 || p.MimeType[:6] != "image/" {
+		return fmt.Errorf("ImagePayload: mime_type must start with image/")
+	}
+	return nil
+}
+
+// Validate checks that AudioPayload has valid base64 data and an audio/ mime type.
+func (p *AudioPayload) Validate() error {
+	if _, err := base64.StdEncoding.DecodeString(p.DataBase64); err != nil {
+		return fmt.Errorf("AudioPayload: invalid base64: %w", err)
+	}
+	if len(p.MimeType) < 6 || p.MimeType[:6] != "audio/" {
+		return fmt.Errorf("AudioPayload: mime_type must start with audio/")
+	}
+	return nil
+}
+
+// Validate checks that VideoPayload has valid base64 data and a video/ mime type.
+func (p *VideoPayload) Validate() error {
+	if _, err := base64.StdEncoding.DecodeString(p.DataBase64); err != nil {
+		return fmt.Errorf("VideoPayload: invalid base64: %w", err)
+	}
+	if len(p.MimeType) < 6 || p.MimeType[:6] != "video/" {
+		return fmt.Errorf("VideoPayload: mime_type must start with video/")
+	}
+	return nil
+}
+
+// Validate checks that BinaryPayload has valid base64 data.
+func (p *BinaryPayload) Validate() error {
+	if _, err := base64.StdEncoding.DecodeString(p.DataBase64); err != nil {
+		return fmt.Errorf("BinaryPayload: invalid base64: %w", err)
+	}
+	return nil
+}
+
+// Validate checks that TelemetryPayload has required fields and non-empty readings.
+func (p *TelemetryPayload) Validate() error {
+	if p.SensorID == "" {
+		return fmt.Errorf("TelemetryPayload: sensor_id must not be empty")
+	}
+	if p.Unit == "" {
+		return fmt.Errorf("TelemetryPayload: unit must not be empty")
+	}
+	if len(p.Readings) == 0 {
+		return fmt.Errorf("TelemetryPayload: readings must not be empty")
+	}
+	return nil
 }
