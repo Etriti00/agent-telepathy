@@ -240,7 +240,7 @@ func TestDLQOverflow(t *testing.T) {
 // TestLWWMapSetGet verifies that a value written with Set can be read back with Get.
 func TestLWWMapSetGet(t *testing.T) {
 	m := NewLWWMap()
-	m.Set("key1", "hello", 1000)
+	m.Set("key1", "hello", 1000, "agent-a")
 	val, ok := m.Get("key1")
 	if !ok {
 		t.Fatal("Get returned false; expected key to be present")
@@ -254,8 +254,8 @@ func TestLWWMapSetGet(t *testing.T) {
 // the higher-timestamp value wins.
 func TestLWWMapLastWriterWins(t *testing.T) {
 	m := NewLWWMap()
-	m.Set("counter", "first", 100)
-	m.Set("counter", "second", 200)
+	m.Set("counter", "first", 100, "agent-a")
+	m.Set("counter", "second", 200, "agent-a")
 	val, ok := m.Get("counter")
 	if !ok {
 		t.Fatal("Get returned false after two sets")
@@ -265,7 +265,7 @@ func TestLWWMapLastWriterWins(t *testing.T) {
 	}
 
 	// An older timestamp must not overwrite the current value.
-	m.Set("counter", "stale", 50)
+	m.Set("counter", "stale", 50, "agent-a")
 	val, _ = m.Get("counter")
 	if val != "second" {
 		t.Errorf("LWW: older write overwrote newer value; got %v, want %q", val, "second")

@@ -1,6 +1,5 @@
 package io.tpcp.core;
 
-import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -28,8 +27,7 @@ public class IdentityManager {
     private final Ed25519PrivateKeyParameters privateKey;
     private final Ed25519PublicKeyParameters publicKey;
     private static final ObjectMapper MAPPER = new ObjectMapper()
-            .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
-            .configure(JsonGenerator.Feature.ESCAPE_NON_ASCII, true);
+            .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true);
 
     /** Generates a fresh Ed25519 keypair. */
     public IdentityManager() {

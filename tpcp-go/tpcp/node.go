@@ -138,6 +138,7 @@ func (n *TPCPNode) handleUpgrade(w http.ResponseWriter, r *http.Request) {
 	n.peersMu.Lock()
 	n.peers[peerID] = conn
 	n.peersMu.Unlock()
+	n.wg.Add(1)
 	go n.readLoop(peerID, conn)
 }
 
@@ -151,6 +152,7 @@ func (n *TPCPNode) Connect(peerURL string) error {
 	n.peersMu.Lock()
 	n.peers[peerID] = conn
 	n.peersMu.Unlock()
+	n.wg.Add(1)
 	go n.readLoop(peerID, conn)
 	return nil
 }
@@ -222,7 +224,6 @@ func (n *TPCPNode) Stop() error {
 }
 
 func (n *TPCPNode) readLoop(peerID string, conn *websocket.Conn) {
-	n.wg.Add(1)
 	defer n.wg.Done()
 	defer func() {
 		conn.Close()
