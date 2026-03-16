@@ -10,6 +10,7 @@ from tpcp.security.crypto import AgentIdentityManager
 from tpcp.memory.crdt import LWWMap
 from tpcp.memory.vector import VectorBank
 
+import threading
 
 def make_node(port: int) -> TPCPNode:
     """Helper to create a TPCPNode with a real Ed25519 identity."""
@@ -291,8 +292,6 @@ async def test_dlq_enqueue_front_evicts_newest_when_full():
 
 
 # ── TASK 8: VECTORBANK CONCURRENCY ──────────────────────────────────
-
-import threading
 
 def test_vectorbank_concurrent_access():
     bank = VectorBank("test-node")

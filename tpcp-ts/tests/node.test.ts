@@ -1,4 +1,10 @@
+import * as crypto from 'crypto';
 import { TPCPNode, TPCPNodeEvents } from '../src/core/node';
+
+// Node 18 jest doesn't expose globalThis.crypto — polyfill it
+if (!globalThis.crypto) {
+  (globalThis as any).crypto = crypto;
+}
 
 describe('TPCPNode typed events', () => {
   test('TPCPNodeEvents interface has required event keys', () => {

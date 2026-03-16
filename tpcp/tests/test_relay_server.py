@@ -9,6 +9,8 @@ import pytest
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
+import time as _time
+
 from tpcp.relay.server import ADNSRelayServer, TokenBucket, BROADCAST_ID
 from tpcp.security.crypto import AgentIdentityManager
 
@@ -610,8 +612,6 @@ async def test_unverified_sender_triggers_challenge_not_routing():
 
 
 # ── TASK 16: CHALLENGE HARDENING TESTS ──────────────────────────────
-
-import time as _time
 
 @pytest.mark.asyncio
 async def test_challenge_expiration_cleanup():
