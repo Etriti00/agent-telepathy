@@ -99,8 +99,8 @@ class ROS2Adapter(BaseFrameworkAdapter):
             raise ValueError("Unsupported raw_output format for Base ROS2 pack_thought.")
 
         envelope = TPCPEnvelope(header=header, payload=payload)
-        self._require_identity_manager()
-        envelope.signature = self.identity_manager.sign_payload(payload.model_dump())
+        im = self._require_identity_manager()
+        envelope.signature = im.sign_payload(payload.model_dump())
         return envelope
 
     def pack_image(self, target_id: UUID, cv_image: Any, caption: str = "ROS2 Camera Frame") -> TPCPEnvelope:
@@ -131,8 +131,8 @@ class ROS2Adapter(BaseFrameworkAdapter):
         )
 
         envelope = TPCPEnvelope(header=header, payload=payload)
-        self._require_identity_manager()
-        envelope.signature = self.identity_manager.sign_payload(payload.model_dump())
+        im = self._require_identity_manager()
+        envelope.signature = im.sign_payload(payload.model_dump())
         return envelope
 
     def start_ros2_spin(self, on_message_callback: Callable[[TPCPEnvelope], None]) -> None:
