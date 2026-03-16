@@ -6,7 +6,7 @@
 
     <groupId>io.tpcp</groupId>
     <artifactId>tpcp-java</artifactId>
-    <version>0.4.0</version>
+    <version>0.4.1</version>
     <packaging>jar</packaging>
 
     <name>TPCP Java SDK</name>

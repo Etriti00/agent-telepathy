@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tpcp-core"
-version = "0.4.0"
+version = "0.4.1"
 description = "Telepathy Communication Protocol - A framework-agnostic communication protocol for autonomous agents."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -36,10 +36,10 @@ dependencies = [
 tpcp = "tpcp.cli.main:cli"
 
 [project.urls]
-Homepage = "https://github.com/tpcp-protocol/tpcp"
-Repository = "https://github.com/tpcp-protocol/tpcp"
-Documentation = "https://github.com/tpcp-protocol/tpcp/blob/main/tpcp/docs/api_reference.md"
-"Bug Tracker" = "https://github.com/tpcp-protocol/tpcp/issues"
+Homepage = "https://github.com/Etriti00/agent-telepathy"
+Repository = "https://github.com/Etriti00/agent-telepathy"
+Documentation = "https://github.com/Etriti00/agent-telepathy/blob/main/tpcp/docs/api_reference.md"
+"Bug Tracker" = "https://github.com/Etriti00/agent-telepathy/issues"
 
 [project.optional-dependencies]
 dev = [
