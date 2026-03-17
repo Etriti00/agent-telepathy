@@ -15,6 +15,7 @@ public class LWWMap {
 
     /** Writes a value with the given timestamp and writer ID. No-op if a newer value exists. */
     public void set(String key, Object value, long timestampMs, String writerId) {
+        java.util.Objects.requireNonNull(writerId, "writerId must not be null");
         map.merge(key, new LWWEntry(value, timestampMs, writerId), (existing, incoming) -> {
             if (incoming.timestampMs > existing.timestampMs) return incoming;
             if (incoming.timestampMs == existing.timestampMs
