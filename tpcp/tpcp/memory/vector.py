@@ -53,26 +53,28 @@ class VectorBank:
 
     def get_vector(self, payload_id: UUID) -> Optional[dict]:
         """Retrieves a stored embedding and its metadata by payload ID."""
-        entry = self._embeddings.get(payload_id)
-        if entry:
-            return {
-                "vector": entry["vector"],
-                "model_id": entry["model_id"],
-                "raw_text_fallback": entry["raw_text_fallback"]
-            }
-        return None
+        with self._lock:
+            entry = self._embeddings.get(payload_id)
+            if entry:
+                return {
+                    "vector": entry["vector"],
+                    "model_id": entry["model_id"],
+                    "raw_text_fallback": entry["raw_text_fallback"]
+                }
+            return None
 
     def list_vectors(self) -> List[dict]:
         """Returns metadata for all stored vectors (without the raw float arrays)."""
-        return [
-            {
-                "payload_id": str(pid),
-                "model_id": entry["model_id"],
-                "dimensions": len(entry["vector"]),
-                "has_raw_text": entry["raw_text_fallback"] is not None
-            }
-            for pid, entry in self._embeddings.items()
-        ]
+        with self._lock:
+            return [
+                {
+                    "payload_id": str(pid),
+                    "model_id": entry["model_id"],
+                    "dimensions": len(entry["vector"]),
+                    "has_raw_text": entry["raw_text_fallback"] is not None
+                }
+                for pid, entry in self._embeddings.items()
+            ]
 
     def search(self, query_vector: List[float], top_k: int = 5) -> List[Tuple[UUID, float, Optional[str]]]:
         """

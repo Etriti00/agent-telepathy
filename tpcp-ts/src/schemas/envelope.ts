@@ -64,13 +64,16 @@ export const TextPayloadSchema = z.object({
 });
 export type TextPayload = z.infer<typeof TextPayloadSchema>;
 
-export const VectorEmbeddingPayloadSchema = z.object({
+// Base schema (ZodObject) is used in the discriminated union;
+// the refined version is exported for standalone validation.
+const VectorEmbeddingPayloadBase = z.object({
   payload_type: z.literal("vector_embedding").default("vector_embedding"),
   model_id: z.string(),
   dimensions: z.number().int().positive(),
   vector: z.array(z.number()),
   raw_text_fallback: z.string().nullable().optional()
-}).refine(data => {
+});
+export const VectorEmbeddingPayloadSchema = VectorEmbeddingPayloadBase.refine(data => {
   if (data.vector.length !== data.dimensions) return false;
   const KNOWN_MODELS: Record<string, number> = {
     "text-embedding-3-small": 1536,
@@ -177,7 +180,7 @@ export type ChunkInfo = z.infer<typeof ChunkInfoSchema>;
 
 export const PayloadSchema = z.discriminatedUnion("payload_type", [
   TextPayloadSchema,
-  VectorEmbeddingPayloadSchema as any,
+  VectorEmbeddingPayloadBase,
   CRDTSyncPayloadSchema,
   ImagePayloadSchema,
   AudioPayloadSchema,

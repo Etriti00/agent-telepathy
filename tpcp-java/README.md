@@ -1,6 +1,6 @@
 # tpcp-java — Java SDK for TPCP
 
-Java 17 implementation of the Telepathy Communication Protocol (TPCP) v0.4.0.
+Java 21 implementation of the Telepathy Communication Protocol (TPCP) v0.4.1.
 
 ## Features
 

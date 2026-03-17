@@ -99,7 +99,7 @@ class MQTTAdapter(BaseFrameworkAdapter):
         memory_state = {
             f"mqtt_{topic.replace('/', '_')}": {
                 "value": value,
-                "timestamp": int(time.time() * 1000),
+                "timestamp": time.time_ns() // 1_000_000,
                 "writer_id": str(self.identity.agent_id)
             }
         }

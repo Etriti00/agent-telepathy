@@ -496,7 +496,6 @@ class TPCPNode:
 
     def _create_nack_envelope(self, original_envelope: TPCPEnvelope, reason: str) -> TPCPEnvelope:
         """Create a NACK envelope referencing the original message."""
-        from tpcp.schemas.envelope import AckInfo, TextPayload
         header = self._create_header(
             receiver_id=original_envelope.header.sender_id,
             intent=Intent.NACK,

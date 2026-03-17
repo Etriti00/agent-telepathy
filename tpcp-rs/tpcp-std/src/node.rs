@@ -142,9 +142,11 @@ impl TPCPNode {
     }
 
     /// Sends a message to the given WebSocket URL.
+    /// `receiver_id` is the target agent's agent_id (not the URL).
     pub async fn send_message(
         &self,
         url: &str,
+        receiver_id: &str,
         intent: Intent,
         payload: serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -157,7 +159,7 @@ impl TPCPNode {
             header: MessageHeader {
                 message_id: uuid_v4(),
                 sender_id: self.identity.agent_id.clone(),
-                receiver_id: url.to_string(),
+                receiver_id: receiver_id.to_string(),
                 intent,
                 timestamp: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
                 ttl: 30,

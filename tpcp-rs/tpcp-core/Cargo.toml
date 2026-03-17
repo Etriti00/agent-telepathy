@@ -1,6 +1,6 @@
 [package]
 name = "tpcp-core"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 description = "no_std-compatible TPCP core types and cryptography"
 license = "AGPL-3.0"

@@ -1,6 +1,6 @@
 # tpcp-go — Go SDK for TPCP
 
-Go implementation of the Telepathy Communication Protocol (TPCP) v0.4.0.
+Go implementation of the Telepathy Communication Protocol (TPCP) v0.4.1.
 
 ## Install
 

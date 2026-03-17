@@ -311,8 +311,12 @@ class ChunkInfo(BaseModel):
 
 def _get_payload_type(data: Any) -> str:
     if isinstance(data, dict):
-        return data.get("payload_type", "text")
-    return getattr(data, "payload_type", "text")
+        pt = data.get("payload_type")
+    else:
+        pt = getattr(data, "payload_type", None)
+    if pt is None:
+        raise ValueError("Missing 'payload_type' field in payload")
+    return pt
 
 
 Payload = Annotated[

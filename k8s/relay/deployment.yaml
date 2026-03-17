@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: tpcp-relay
     app.kubernetes.io/component: relay
-    app.kubernetes.io/version: "0.4.0"
+    app.kubernetes.io/version: "0.4.1"
 spec:
   replicas: 3
   selector:
@@ -21,7 +21,7 @@ spec:
       serviceAccountName: tpcp-relay
       containers:
         - name: tpcp-relay
-          image: ghcr.io/tpcp-protocol/tpcp-relay:0.4.0
+          image: ghcr.io/etriti00/agent-telepathy/tpcp-relay:0.4.1
           securityContext:
             runAsNonRoot: true
             runAsUser: 1001
