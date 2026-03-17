@@ -1,4 +1,4 @@
-module github.com/tpcp-protocol/tpcp-go
+module github.com/Etriti00/agent-telepathy/tpcp-go
 
 go 1.22
 

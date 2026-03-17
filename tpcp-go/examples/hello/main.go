@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/tpcp-protocol/tpcp-go/tpcp"
+	"github.com/Etriti00/agent-telepathy/tpcp-go/tpcp"
 )
 
 func main() {

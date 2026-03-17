@@ -5,13 +5,13 @@ Go implementation of the Telepathy Communication Protocol (TPCP) v0.4.1.
 ## Install
 
 ```bash
-go get github.com/tpcp-protocol/tpcp-go
+go get github.com/Etriti00/agent-telepathy/tpcp-go
 ```
 
 ## Quick Start
 
 ```go
-import "github.com/tpcp-protocol/tpcp-go/tpcp"
+import "github.com/Etriti00/agent-telepathy/tpcp-go/tpcp"
 
 // Generate identity
 identity, privKey, _ := tpcp.GenerateIdentity("my-agent")
