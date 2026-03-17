@@ -33,11 +33,11 @@ jobs:
           MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
         run: |
-          echo "Testing Sonatype Central credentials..."
-          curl -s -o /dev/null -w "HTTP Status: %{http_code}\n" \
-            -u "${MAVEN_USERNAME}:${MAVEN_PASSWORD}" \
-            "https://central.sonatype.com/api/v1/publisher/published?namespace=io.github.etriti00" \
-            || echo "curl failed"
+          ENCODED=$(echo -n "${MAVEN_USERNAME}:${MAVEN_PASSWORD}" | base64)
+          echo "Testing with Bearer auth (base64 encoded token)..."
+          curl -s -o /dev/null -w "HTTP Bearer Status: %{http_code}\n" \
+            -H "Authorization: Bearer ${ENCODED}" \
+            "https://central.sonatype.com/api/v1/publisher/published?namespace=io.github.etriti00"
 
       - name: Publish to Maven Central
         run: cd tpcp-java && mvn --batch-mode -e deploy
