@@ -4,7 +4,6 @@ on:
   workflow_run:
     workflows: ["TPCP CI/CD"]
     types: [completed]
-    branches: ['main']
 
 jobs:
   publish:
