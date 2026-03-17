@@ -27,7 +27,7 @@ def _make_envelope(msg_id: str = None) -> TPCPEnvelope:
 @pytest.mark.asyncio
 async def test_enqueue_and_dequeue():
     q = MessageQueue(max_size_per_peer=10)
-    target = str(uuid4())
+    target = uuid4()
     env = _make_envelope()
     await q.enqueue(target, env)
     assert await q.has_messages(target)

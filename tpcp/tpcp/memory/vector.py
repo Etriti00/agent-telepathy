@@ -42,10 +42,11 @@ class VectorBank:
     def store_vector(self, payload_id: UUID, vector: List[float], model_id: str, raw_text: Optional[str] = None) -> None:
         """Saves a semantic chunk with its embedding vector and metadata."""
         # Pre-compute the norm for fast cosine similarity later
-        norm = math.sqrt(sum(x * x for x in vector))
+        vector_copy = list(vector)
+        norm = math.sqrt(sum(x * x for x in vector_copy))
         with self._lock:
             self._embeddings[payload_id] = {
-                "vector": vector,
+                "vector": vector_copy,
                 "norm": norm,
                 "model_id": model_id,
                 "raw_text_fallback": raw_text
