@@ -1,5 +1,5 @@
 {
-  "name": "tpcp-ts",
+  "name": "tpcp-sdk",
   "version": "0.4.1",
   "description": "Telepathy Communication Protocol - TypeScript/Node.js SDK for multi-agent AI communication",
   "main": "dist/index.js",

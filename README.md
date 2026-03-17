@@ -133,7 +133,7 @@ cd tpcp-ts && npm install && npm run build
 ```
 
 ```typescript
-import { TPCPNode } from 'tpcp-ts';
+import { TPCPNode } from 'tpcp-sdk';
 
 const node = new TPCPNode({
   agent_id: crypto.randomUUID(),
