@@ -51,6 +51,6 @@ The HPA (`relay/hpa.yaml`) scales between 3–20 replicas based on CPU (70%) and
 ## Build Container
 
 ```bash
-docker build -f k8s/Dockerfile.relay -t ghcr.io/tpcp-protocol/tpcp-relay:0.4.1 .
-docker push ghcr.io/tpcp-protocol/tpcp-relay:0.4.1
+docker build -f k8s/Dockerfile.relay -t ghcr.io/etriti00/agent-telepathy/tpcp-relay:0.4.1 .
+docker push ghcr.io/etriti00/agent-telepathy/tpcp-relay:0.4.1
 ```

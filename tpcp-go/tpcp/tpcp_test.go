@@ -3,8 +3,10 @@ package tpcp
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestIntentWireValues verifies that Intent constants serialize to the canonical
@@ -380,5 +382,40 @@ func TestSendMessagePopulatesReceiverID(t *testing.T) {
 	// Expect error about peer not connected — not about receiverID
 	if err == nil {
 		t.Log("SendMessage succeeded (peer was unexpectedly reachable)")
+	}
+}
+
+func TestStopDoesNotDeadlock(t *testing.T) {
+	identity, priv, err := GenerateIdentity("deadlock-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	node := NewTPCPNode(identity, priv)
+
+	// Find a free port by binding to :0, recording the port, then releasing.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+
+	if err := node.Listen(addr); err != nil {
+		t.Fatal(err)
+	}
+
+	// Stop must return within 5 seconds — if it deadlocks, the test times out.
+	done := make(chan error, 1)
+	go func() {
+		done <- node.Stop()
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Stop returned error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stop() deadlocked — did not return within 5 seconds")
 	}
 }

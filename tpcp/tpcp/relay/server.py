@@ -37,6 +37,8 @@ from websockets.datastructures import Headers
 from websockets.http11 import Request, Response as HTTPResponse
 
 from uuid import UUID
+from tpcp.security.crypto import AgentIdentityManager
+
 BROADCAST_ID = str(UUID(int=0))
 
 logging.basicConfig(level=logging.INFO)
@@ -102,7 +104,6 @@ class ADNSRelayServer:
         self._challenge_rate_limits: Dict[str, list] = {}
 
     async def _handle_connection(self, websocket: ServerConnection) -> None:
-        agent_id = None
         ws_id = id(websocket)
         self._rate_limiters[ws_id] = TokenBucket(self.rate_limit, self.burst_limit)
         
@@ -166,16 +167,16 @@ class ADNSRelayServer:
                         # Fan-out to all registered peers except the sender
                         fanout_count = 0
                         stale_agents = []
-                        for agent_id, info in list(self.registry.items()):
-                            if agent_id != sender_id:
+                        for peer_id, info in list(self.registry.items()):
+                            if peer_id != sender_id:
                                 try:
                                     await info["ws"].send(forwarded_message)
                                     fanout_count += 1
                                 except Exception as exc:
-                                    logger.warning(f"[Relay] Broadcast to {agent_id} failed: {exc}")
-                                    stale_agents.append(agent_id)
-                        for agent_id in stale_agents:
-                            del self.registry[agent_id]
+                                    logger.warning(f"[Relay] Broadcast to {peer_id} failed: {exc}")
+                                    stale_agents.append(peer_id)
+                        for stale_id in stale_agents:
+                            del self.registry[stale_id]
                         logger.info(f"[Relay] Broadcast from {sender_id}: fanned out to {fanout_count} peers")
                     elif target_id and target_id in self.registry and target_id != sender_id:
                         logger.info(f"Routing {intent} from {sender_id} to {target_id} (TTL={ttl-1})")
@@ -305,8 +306,6 @@ class ADNSRelayServer:
             return
         
         # Verify the signature
-        from tpcp.security.crypto import AgentIdentityManager
-        
         nonce_bytes = nonce.encode('utf-8')
         if AgentIdentityManager.verify_bytes(public_key_str, signed_nonce, nonce_bytes):
             # Registration successful

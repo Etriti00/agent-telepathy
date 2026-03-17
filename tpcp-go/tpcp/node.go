@@ -216,6 +216,11 @@ func (n *TPCPNode) SendMessage(peerID string, receiverID string, intent Intent, 
 // defers see an empty map and skip the redundant Close().
 func (n *TPCPNode) Stop() error {
 	close(n.done)
+	// Close server FIRST so Serve() returns and the goroutine can exit.
+	var serverErr error
+	if n.server != nil {
+		serverErr = n.server.Close()
+	}
 	n.peersMu.Lock()
 	for _, conn := range n.peers {
 		conn.Close()
@@ -223,10 +228,7 @@ func (n *TPCPNode) Stop() error {
 	n.peers = make(map[string]*websocket.Conn)
 	n.peersMu.Unlock()
 	n.wg.Wait()
-	if n.server != nil {
-		return n.server.Close()
-	}
-	return nil
+	return serverErr
 }
 
 func (n *TPCPNode) readLoop(peerID string, conn *websocket.Conn) {

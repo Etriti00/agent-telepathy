@@ -43,6 +43,12 @@ class LWWMapTest {
     }
 
     @Test
+    void setRejectsNullWriterId() {
+        LWWMap map = new LWWMap();
+        assertThrows(NullPointerException.class, () -> map.set("key", "val", 100, null));
+    }
+
+    @Test
     void writerIdTieBreaking() {
         LWWMap map = new LWWMap();
         map.set("key", "agent-a-val", 100L, "agent-a");

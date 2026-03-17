@@ -57,7 +57,7 @@ class VectorBank:
             entry = self._embeddings.get(payload_id)
             if entry:
                 return {
-                    "vector": entry["vector"],
+                    "vector": list(entry["vector"]),
                     "model_id": entry["model_id"],
                     "raw_text_fallback": entry["raw_text_fallback"]
                 }

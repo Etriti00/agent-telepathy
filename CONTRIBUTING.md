@@ -49,7 +49,12 @@ mvn clean package    # requires Java 21+
 1. **Fork** the repository on GitHub
 2. Create a **feature branch** (`git checkout -b feat/your-feature`)
 3. Make your changes with clear, focused commits
-4. Ensure all tests pass: `pytest` (Python) or `npm test` (TypeScript)
+4. Ensure all tests pass for affected SDKs:
+   - Python: `cd tpcp && pytest`
+   - TypeScript: `cd tpcp-ts && npm test`
+   - Go: `cd tpcp-go && go test ./tpcp/`
+   - Rust: `cd tpcp-rs && cargo test --workspace`
+   - Java: `cd tpcp-java && mvn test`
 5. Open a **Pull Request** with a clear description of your changes
 
 ## What We're Looking For
