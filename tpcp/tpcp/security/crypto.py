@@ -83,6 +83,14 @@ class AgentIdentityManager:
             
         self._public_key = self._private_key.public_key()
 
+        # Validate key by performing a test sign/verify roundtrip
+        try:
+            test_data = b"tpcp-key-validation"
+            test_sig = self._private_key.sign(test_data)
+            self._public_key.verify(test_sig, test_data)
+        except Exception as e:
+            raise RuntimeError(f"Invalid Ed25519 key: sign/verify roundtrip failed: {e}")
+
     @property
     def was_loaded(self) -> bool:
         """True if the key was loaded from persistent storage, False if freshly generated."""
@@ -155,7 +163,7 @@ class AgentIdentityManager:
         Signs the deterministic JSON representation of a payload dictionary.
         Returns a base64 encoded signature string.
         """
-        serialized_payload = json.dumps(payload_dict, separators=(',', ':'), sort_keys=True).encode('utf-8')
+        serialized_payload = json.dumps(payload_dict, separators=(',', ':'), sort_keys=True, ensure_ascii=False).encode('utf-8')
         signature = self._private_key.sign(serialized_payload)
         return base64.b64encode(signature).decode('utf-8')
 
@@ -175,11 +183,18 @@ class AgentIdentityManager:
             signature_bytes = base64.b64decode(signature_str)
             
             public_key = ed25519.Ed25519PublicKey.from_public_bytes(public_bytes)
-            serialized_payload = json.dumps(payload_dict, separators=(',', ':'), sort_keys=True).encode('utf-8')
+            serialized_payload = json.dumps(payload_dict, separators=(',', ':'), sort_keys=True, ensure_ascii=False).encode('utf-8')
             
             public_key.verify(signature_bytes, serialized_payload)
             return True
-        except (ValueError, InvalidSignature, TypeError):
+        except ValueError as e:
+            logger.debug(f"Bad base64 encoding in signature verification: {e}")
+            return False
+        except InvalidSignature:
+            logger.debug("Invalid Ed25519 signature (correctly encoded but wrong)")
+            return False
+        except TypeError as e:
+            logger.debug(f"Type error in signature verification: {e}")
             return False
 
     @staticmethod
@@ -191,5 +206,12 @@ class AgentIdentityManager:
             public_key = ed25519.Ed25519PublicKey.from_public_bytes(public_bytes)
             public_key.verify(signature_bytes, data)
             return True
-        except (ValueError, InvalidSignature, TypeError):
+        except ValueError as e:
+            logger.debug(f"Bad base64 encoding in bytes verification: {e}")
+            return False
+        except InvalidSignature:
+            logger.debug("Invalid Ed25519 signature in bytes verification")
+            return False
+        except TypeError as e:
+            logger.debug(f"Type error in bytes verification: {e}")
             return False

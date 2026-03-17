@@ -23,12 +23,13 @@ Defines all payload types for multimodal AI agent communication:
 All payload types use a discriminated union via `payload_type` for unambiguous parsing.
 """
 
+import base64 as _base64
 from enum import Enum
 from typing import Any, Annotated, Dict, List, Literal, Optional, Union
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Discriminator, Field, Tag, model_validator
+from pydantic import BaseModel, Discriminator, Field, Tag, field_validator, model_validator
 
 
 PROTOCOL_VERSION = "0.4.0"
@@ -144,9 +145,18 @@ class ImagePayload(BaseModel):
         description="The model that generated or analyzed this image (e.g., 'dall-e-3', 'stable-diffusion-xl')."
     )
     caption: Optional[str] = Field(
-        default=None, 
+        default=None,
         description="Optional text description of the image for agents that cannot process visual data."
     )
+
+    @field_validator('data_base64')
+    @classmethod
+    def validate_base64(cls, v: str) -> str:
+        try:
+            _base64.b64decode(v, validate=True)
+        except Exception:
+            raise ValueError("data_base64 must be valid base64-encoded data")
+        return v
 
 
 class AudioPayload(BaseModel):
@@ -170,6 +180,15 @@ class AudioPayload(BaseModel):
         default=None,
         description="Optional text transcript for agents that cannot process audio."
     )
+
+    @field_validator('data_base64')
+    @classmethod
+    def validate_base64(cls, v: str) -> str:
+        try:
+            _base64.b64decode(v, validate=True)
+        except Exception:
+            raise ValueError("data_base64 must be valid base64-encoded data")
+        return v
 
 
 class VideoPayload(BaseModel):
@@ -196,6 +215,15 @@ class VideoPayload(BaseModel):
         description="Optional text description for agents that cannot process video."
     )
 
+    @field_validator('data_base64')
+    @classmethod
+    def validate_base64(cls, v: str) -> str:
+        try:
+            _base64.b64decode(v, validate=True)
+        except Exception:
+            raise ValueError("data_base64 must be valid base64-encoded data")
+        return v
+
 
 class BinaryPayload(BaseModel):
     """
@@ -217,6 +245,15 @@ class BinaryPayload(BaseModel):
         description="Optional text description of the binary content."
     )
 
+    @field_validator('data_base64')
+    @classmethod
+    def validate_base64(cls, v: str) -> str:
+        try:
+            _base64.b64decode(v, validate=True)
+        except Exception:
+            raise ValueError("data_base64 must be valid base64-encoded data")
+        return v
+
 
 # ── TELEMETRY PAYLOAD TYPE ────────────────────────────────────────────
 
@@ -224,7 +261,15 @@ class TelemetryReading(BaseModel):
     """A single sensor reading with timestamp and optional quality indicator."""
     value: float = Field(..., description="Sensor reading value.")
     timestamp_ms: int = Field(..., description="Unix epoch timestamp in milliseconds.")
-    quality: Optional[Literal["Good", "Bad", "Uncertain"]] = Field(default=None, description="OPC-UA quality code: 'Good', 'Bad', or 'Uncertain'.")
+    quality: Optional[str] = Field(default=None, description="OPC-UA quality code: 'Good', 'Bad', or 'Uncertain'.")
+
+    @field_validator('quality')
+    @classmethod
+    def warn_unknown_quality(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in ("Good", "Bad", "Uncertain"):
+            import logging
+            logging.getLogger(__name__).warning(f"Unknown quality value: {v!r}. Expected 'Good', 'Bad', or 'Uncertain'.")
+        return v
 
 
 class TelemetryPayload(BaseModel):
@@ -236,9 +281,16 @@ class TelemetryPayload(BaseModel):
     sensor_id: str = Field(..., description="Unique sensor identifier, e.g. 'opcua_ns2_i_2' or 'can_0x123'.")
     unit: str = Field(..., description="Engineering unit, e.g. 'rpm', 'celsius', 'bar'.")
     readings: List[TelemetryReading] = Field(..., description="Batch of timestamped readings from this sensor.")
-    source_protocol: Literal["opcua", "modbus", "canbus", "mqtt"] = Field(
-        ..., description="Origin protocol: 'opcua', 'modbus', 'canbus', or 'mqtt'."
-    )
+    source_protocol: str = Field(..., description="Origin protocol: 'opcua', 'modbus', 'canbus', or 'mqtt'.")
+
+    @field_validator('source_protocol')
+    @classmethod
+    def warn_unknown_protocol(cls, v: str) -> str:
+        known = {"opcua", "modbus", "canbus", "mqtt"}
+        if v not in known:
+            import logging
+            logging.getLogger(__name__).warning(f"Unknown source_protocol: {v!r}. Known: {known}")
+        return v
 
 
 # ── ACK / CHUNK METADATA MODELS ───────────────────────────────────────
@@ -259,8 +311,12 @@ class ChunkInfo(BaseModel):
 
 def _get_payload_type(data: Any) -> str:
     if isinstance(data, dict):
-        return data.get("payload_type", "text")
-    return getattr(data, "payload_type", "text")
+        pt = data.get("payload_type")
+    else:
+        pt = getattr(data, "payload_type", None)
+    if pt is None:
+        raise ValueError("Missing 'payload_type' field in payload")
+    return pt
 
 
 Payload = Annotated[

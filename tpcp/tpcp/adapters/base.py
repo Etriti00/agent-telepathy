@@ -56,6 +56,11 @@ class BaseFrameworkAdapter(ABC):
         """
         pass
 
+    def _require_identity_manager(self) -> Any:
+        if self.identity_manager is None:
+            raise RuntimeError("identity_manager is required for message signing")
+        return self.identity_manager
+
     def _create_header(self, receiver_id: UUID, intent: Intent) -> MessageHeader:
         """Helper to construct standard message headers."""
         return MessageHeader(

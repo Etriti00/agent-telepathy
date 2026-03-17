@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -12,8 +13,15 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+// defaultUpgrader is kept for non-node uses; TPCPNode uses a per-node upgrader
+// built in handleUpgrade to enforce AllowedOrigins.
+var defaultUpgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool { return false },
+}
+
+// Validatable is implemented by payload types that can self-validate.
+type Validatable interface {
+	Validate() error
 }
 
 // TPCPNode is a TPCP agent node that can send and receive messages over WebSocket.
@@ -22,6 +30,14 @@ type TPCPNode struct {
 	PrivKey  ed25519.PrivateKey
 	Memory   *LWWMap
 	DLQ      *DLQ
+
+	// AllowedOrigins is the list of permitted WebSocket origins for browser clients.
+	// If empty, all origins are rejected when an Origin header is present.
+	// Non-browser clients (no Origin header) are always allowed.
+	AllowedOrigins []string
+
+	// Ready is closed by Listen() once the server is bound and ready to accept connections.
+	Ready chan struct{}
 
 	handlers   map[Intent]func(*TPCPEnvelope)
 	handlersMu sync.RWMutex
@@ -33,21 +49,27 @@ type TPCPNode struct {
 	peers   map[string]*websocket.Conn
 	peersMu sync.RWMutex
 
+	seenMessages   map[string]int64
+	seenMessagesMu sync.Mutex
+
 	server *http.Server
 	done   chan struct{}
+	wg     sync.WaitGroup
 }
 
 // NewTPCPNode creates a TPCPNode with the given identity and optional private key.
 func NewTPCPNode(identity *AgentIdentity, privKey ed25519.PrivateKey) *TPCPNode {
 	return &TPCPNode{
-		Identity:   identity,
-		PrivKey:    privKey,
-		Memory:     NewLWWMap(),
-		DLQ:        NewDLQ(),
-		handlers:   make(map[Intent]func(*TPCPEnvelope)),
-		peerKeys:   make(map[string]string),
-		peers:      make(map[string]*websocket.Conn),
-		done:       make(chan struct{}),
+		Identity: identity,
+		PrivKey:  privKey,
+		Memory:   NewLWWMap(),
+		DLQ:      NewDLQ(),
+		Ready:    make(chan struct{}),
+		handlers: make(map[Intent]func(*TPCPEnvelope)),
+		peerKeys:     make(map[string]string),
+		peers:        make(map[string]*websocket.Conn),
+		seenMessages: make(map[string]int64),
+		done:         make(chan struct{}),
 	}
 }
 
@@ -66,12 +88,23 @@ func (n *TPCPNode) RegisterPeerKey(agentID, pubKeyB64 string) {
 }
 
 // Listen starts a WebSocket server on the given address (e.g. ":8765").
+// It binds the listener synchronously so that when Listen returns the port is
+// already accepting connections. The Ready channel is closed immediately after
+// the listener is bound.
 func (n *TPCPNode) Listen(addr string) error {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("listen %s: %w", addr, err)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", n.handleUpgrade)
 	n.server = &http.Server{Addr: addr, Handler: mux}
+	// Signal that the server is bound and ready to accept connections.
+	close(n.Ready)
+	n.wg.Add(1)
 	go func() {
-		if err := n.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		defer n.wg.Done()
+		if err := n.server.Serve(ln); err != nil && err != http.ErrServerClosed {
 			log.Printf("[TPCPNode] server error: %v", err)
 		}
 	}()
@@ -79,6 +112,25 @@ func (n *TPCPNode) Listen(addr string) error {
 }
 
 func (n *TPCPNode) handleUpgrade(w http.ResponseWriter, r *http.Request) {
+	upgrader := websocket.Upgrader{
+		CheckOrigin: func(req *http.Request) bool {
+			origin := req.Header.Get("Origin")
+			// Non-browser clients (no Origin header) are always allowed.
+			if origin == "" {
+				return true
+			}
+			// If no allowed origins are configured, deny all browser origins.
+			if len(n.AllowedOrigins) == 0 {
+				return false
+			}
+			for _, allowed := range n.AllowedOrigins {
+				if origin == allowed {
+					return true
+				}
+			}
+			return false
+		},
+	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("[TPCPNode] upgrade error: %v", err)
@@ -88,6 +140,7 @@ func (n *TPCPNode) handleUpgrade(w http.ResponseWriter, r *http.Request) {
 	n.peersMu.Lock()
 	n.peers[peerID] = conn
 	n.peersMu.Unlock()
+	n.wg.Add(1)
 	go n.readLoop(peerID, conn)
 }
 
@@ -101,13 +154,22 @@ func (n *TPCPNode) Connect(peerURL string) error {
 	n.peersMu.Lock()
 	n.peers[peerID] = conn
 	n.peersMu.Unlock()
+	n.wg.Add(1)
 	go n.readLoop(peerID, conn)
 	return nil
 }
 
 // SendMessage sends a message with the given intent and payload to a peer.
+// peerID is the connection key (URL or remote address).
+// receiverID is the agent_id of the target agent (used in the envelope header).
 // payload must be JSON-serializable.
-func (n *TPCPNode) SendMessage(peerID string, intent Intent, payload interface{}) error {
+func (n *TPCPNode) SendMessage(peerID string, receiverID string, intent Intent, payload interface{}) error {
+	if v, ok := payload.(Validatable); ok {
+		if err := v.Validate(); err != nil {
+			return fmt.Errorf("payload validation: %w", err)
+		}
+	}
+
 	n.peersMu.RLock()
 	conn, ok := n.peers[peerID]
 	n.peersMu.RUnlock()
@@ -125,7 +187,7 @@ func (n *TPCPNode) SendMessage(peerID string, intent Intent, payload interface{}
 			MessageID:       randomUUID(),
 			Timestamp:       time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
 			SenderID:        n.Identity.AgentID,
-			ReceiverID:      peerID,
+			ReceiverID:      receiverID,
 			Intent:          intent,
 			TTL:             30,
 			ProtocolVersion: PROTOCOL_VERSION,
@@ -136,9 +198,10 @@ func (n *TPCPNode) SendMessage(peerID string, intent Intent, payload interface{}
 	// Sign the payload with canonical JSON if we have a private key.
 	if n.PrivKey != nil {
 		canonical, err := CanonicalJSON(payload)
-		if err == nil {
-			envelope.Signature = Sign(n.PrivKey, canonical)
+		if err != nil {
+			return fmt.Errorf("canonical JSON for signing: %w", err)
 		}
+		envelope.Signature = Sign(n.PrivKey, canonical)
 	}
 
 	data, err := json.Marshal(envelope)
@@ -149,25 +212,33 @@ func (n *TPCPNode) SendMessage(peerID string, intent Intent, payload interface{}
 }
 
 // Stop shuts down the WebSocket server and closes all peer connections.
+// Connections are closed here and the peers map is replaced so that readLoop
+// defers see an empty map and skip the redundant Close().
 func (n *TPCPNode) Stop() error {
 	close(n.done)
-	n.peersMu.Lock()
-	for id, conn := range n.peers {
-		conn.Close()
-		delete(n.peers, id)
-	}
-	n.peersMu.Unlock()
+	// Close server FIRST so Serve() returns and the goroutine can exit.
+	var serverErr error
 	if n.server != nil {
-		return n.server.Close()
+		serverErr = n.server.Close()
 	}
-	return nil
+	n.peersMu.Lock()
+	for _, conn := range n.peers {
+		conn.Close()
+	}
+	n.peers = make(map[string]*websocket.Conn)
+	n.peersMu.Unlock()
+	n.wg.Wait()
+	return serverErr
 }
 
 func (n *TPCPNode) readLoop(peerID string, conn *websocket.Conn) {
+	defer n.wg.Done()
 	defer func() {
-		conn.Close()
 		n.peersMu.Lock()
-		delete(n.peers, peerID)
+		if _, exists := n.peers[peerID]; exists {
+			conn.Close()
+			delete(n.peers, peerID)
+		}
 		n.peersMu.Unlock()
 	}()
 	for {
@@ -186,19 +257,37 @@ func (n *TPCPNode) readLoop(peerID string, conn *websocket.Conn) {
 			continue
 		}
 
+		// Replay protection: drop duplicate message IDs; clean up entries older than 300s.
+		n.seenMessagesMu.Lock()
+		if _, dup := n.seenMessages[env.Header.MessageID]; dup {
+			n.seenMessagesMu.Unlock()
+			continue
+		}
+		n.seenMessages[env.Header.MessageID] = time.Now().Unix()
+		for id, ts := range n.seenMessages {
+			if time.Now().Unix()-ts > 300 {
+				delete(n.seenMessages, id)
+			}
+		}
+		n.seenMessagesMu.Unlock()
+
 		// Verify inbound signature if a public key is registered for the sender.
+		// Fail-closed: if the message carries a signature but the sender's public key
+		// is not registered, treat it as unverifiable and drop it.
 		if env.Signature != "" {
 			n.peerKeysMu.RLock()
 			pubKey, known := n.peerKeys[env.Header.SenderID]
 			n.peerKeysMu.RUnlock()
-			if known {
-				var payloadVal interface{}
-				if err := json.Unmarshal(env.Payload, &payloadVal); err == nil {
-					canonical, err := CanonicalJSON(payloadVal)
-					if err == nil && !Verify(pubKey, canonical, env.Signature) {
-						log.Printf("[TPCPNode] signature verification FAILED for message from %s — dropping", env.Header.SenderID)
-						continue
-					}
+			if !known {
+				log.Printf("[TPCPNode] signed message from unknown peer %s — dropping", env.Header.SenderID)
+				continue
+			}
+			var payloadVal interface{}
+			if err := json.Unmarshal(env.Payload, &payloadVal); err == nil {
+				canonical, err := CanonicalJSON(payloadVal)
+				if err == nil && !Verify(pubKey, canonical, env.Signature) {
+					log.Printf("[TPCPNode] signature verification FAILED for message from %s — dropping", env.Header.SenderID)
+					continue
 				}
 			}
 		}

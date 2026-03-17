@@ -296,7 +296,7 @@ class _OPCUASubscriptionHandler:
             raw_output = {
                 "node_id": node_id,
                 "value": val,
-                "timestamp_ms": int(time.time() * 1000),
+                "timestamp_ms": time.time_ns() // 1_000_000,
             }
             if hasattr(data, "monitored_item") and hasattr(data.monitored_item, "Value"):
                 sv = data.monitored_item.Value

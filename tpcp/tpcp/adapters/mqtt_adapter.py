@@ -58,7 +58,7 @@ class MQTTAdapter(BaseFrameworkAdapter):
     """
 
     def __init__(self, identity: AgentIdentity, broker_host: str, broker_port: int = 1883,
-                 client_id: str = "tpcp_edge_bridge", identity_manager=None):
+                 client_id: str = "tpcp_edge_bridge", identity_manager=None, allowed_topics=None):
         if not MQTT_AVAILABLE:
             raise ImportError(
                 "paho-mqtt is required for MQTTAdapter. "
@@ -67,6 +67,7 @@ class MQTTAdapter(BaseFrameworkAdapter):
         super().__init__(identity, identity_manager)
         self.broker_host = broker_host
         self.broker_port = broker_port
+        self._allowed_topics = allowed_topics
         
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1, client_id=client_id, protocol=mqtt.MQTTv311)
         self.client.on_connect = self._on_connect
@@ -76,6 +77,11 @@ class MQTTAdapter(BaseFrameworkAdapter):
         self._on_tpcp_message_callback: Optional[Callable[[TPCPEnvelope], None]] = None
         self._subscribed_topics: List[str] = []
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+
+    def _is_topic_allowed(self, topic: str) -> bool:
+        if self._allowed_topics is None:
+            return True
+        return topic in self._allowed_topics
 
     def pack_thought(self, target_id: UUID, raw_output: Dict[str, Any], intent: Intent = Intent.STATE_SYNC) -> TPCPEnvelope:
         """
@@ -93,7 +99,7 @@ class MQTTAdapter(BaseFrameworkAdapter):
         memory_state = {
             f"mqtt_{topic.replace('/', '_')}": {
                 "value": value,
-                "timestamp": int(time.time() * 1000),
+                "timestamp": time.time_ns() // 1_000_000,
                 "writer_id": str(self.identity.agent_id)
             }
         }
@@ -114,8 +120,8 @@ class MQTTAdapter(BaseFrameworkAdapter):
         )
 
         envelope = TPCPEnvelope(header=header, payload=payload)
-        if self.identity_manager:
-            envelope.signature = self.identity_manager.sign_payload(payload.model_dump())
+        im = self._require_identity_manager()
+        envelope.signature = im.sign_payload(payload.model_dump())
         return envelope
 
     def unpack_request(self, envelope: TPCPEnvelope) -> Any:

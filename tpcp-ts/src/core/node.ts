@@ -19,20 +19,45 @@
  */
 
 import { EventEmitter } from 'events';
-import WebSocket from 'ws';
 
-import { 
-  AgentIdentity, 
-  TPCPEnvelope, 
-  Intent, 
-  MessageHeader, 
-  TPCPEnvelopeSchema, 
+// Lazy-load WebSocket for browser compatibility. In browsers, globalThis.WebSocket
+// is used. In Node.js, the 'ws' package is required dynamically.
+import type WsLib from 'ws';
+type WebSocket = WsLib;
+type WsConstructor = typeof WsLib;
+const WS: WsConstructor = (() => {
+  if (typeof globalThis !== 'undefined' && (globalThis as any).WebSocket) {
+    return (globalThis as any).WebSocket;
+  }
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require('ws');
+  } catch {
+    throw new Error('WebSocket not available. Install "ws" package for Node.js.');
+  }
+})();
+
+import {
+  AgentIdentity,
+  TPCPEnvelope,
+  Intent,
+  MessageHeader,
+  TPCPEnvelopeSchema,
   CRDTSyncPayload,
   VectorEmbeddingPayload,
+  PayloadSchema,
   PROTOCOL_VERSION
 } from '../schemas/envelope';
 import { LWWMap } from '../memory/crdt';
 import { AgentIdentityManager } from '../security/crypto';
+
+export interface TPCPNodeEvents {
+  message: (envelope: TPCPEnvelope) => void;
+  error: (error: Error) => void;
+  ready: () => void;
+  'peer:connected': (peerId: string) => void;
+  'peer:disconnected': (peerId: string) => void;
+}
 
 
 // ── MESSAGE QUEUE (DLQ) ──────────────────────────────────────────────
@@ -64,7 +89,11 @@ class MessageQueue {
     if (!this._dlq.has(targetId)) {
       this._dlq.set(targetId, []);
     }
-    this._dlq.get(targetId)!.unshift({ data: serialized, messageId });
+    const q = this._dlq.get(targetId)!;
+    if (q.length >= this._maxSize) {
+      q.pop(); // Evict newest from back to make room for retry at front
+    }
+    q.unshift({ data: serialized, messageId });
   }
 
   dequeueOne(targetId: string): QueuedEnvelope | null {
@@ -109,6 +138,9 @@ class VectorBank {
   }
 
   search(queryVector: number[], topK: number = 5): { payloadId: string; similarity: number; rawText?: string }[] {
+    if (topK <= 0 || !Number.isFinite(topK)) {
+      throw new Error(`topK must be a positive finite number, got ${topK}`);
+    }
     const queryNorm = Math.sqrt(queryVector.reduce((sum, x) => sum + x * x, 0));
     if (queryNorm === 0) return [];
 
@@ -147,11 +179,15 @@ export class TPCPNode extends EventEmitter {
   public identityManager: AgentIdentityManager;
   public messageQueue: MessageQueue;
 
-  private _server?: WebSocket.Server;
+  private _server?: WsLib.Server;
   private _adnsWs?: WebSocket;
   private _adnsRegistered: boolean = false;
   protected _running: boolean = false;
   private _peerConnections: Map<string, WebSocket> = new Map();
+  private _reconnecting: Set<string> = new Set();
+  private _pendingConnections: Map<string, Promise<WebSocket>> = new Map();
+  _seenMessages: Map<string, number> = new Map();
+  _cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(identity: AgentIdentity, host: string = "127.0.0.1", port: number = 8000, adnsUrl?: string) {
     super();
@@ -166,6 +202,13 @@ export class TPCPNode extends EventEmitter {
     this.sharedMemory = new LWWMap(this.identity.agent_id);
     this.vectorBank = new VectorBank(this.identity.agent_id);
     this.messageQueue = new MessageQueue(500);
+
+    this._cleanupInterval = setInterval(() => {
+      const cutoff = Date.now() - 300_000;
+      for (const [id, ts] of this._seenMessages) {
+        if (ts < cutoff) this._seenMessages.delete(id);
+      }
+    }, 60_000);
   }
 
   public registerPeer(identity: AgentIdentity, address: string): void {
@@ -182,11 +225,41 @@ export class TPCPNode extends EventEmitter {
   }
 
   public async startListening(): Promise<void> {
-    this._server = new WebSocket.Server({ host: this.host, port: this.port });
+    // WebSocket.Server is Node.js-only; lazy-load to avoid crashing browsers.
+    let WsServer: typeof import('ws').Server;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      WsServer = require('ws').Server;
+    } catch {
+      throw new Error('WebSocket.Server requires Node.js with the "ws" package installed');
+    }
+    this._server = new WsServer({ host: this.host, port: this.port });
     this._running = true;
-    
+
+    await new Promise<void>((resolve, reject) => {
+      const onListening = () => {
+        this._server!.off('error', onError);
+        this.emit('ready');
+        resolve();
+      };
+      const onError = (err: Error) => {
+        this._server!.off('listening', onListening);
+        console.error(`[TPCPNode] WebSocket server error: ${err.message}`);
+        this.emit('error', err);
+        reject(err);
+      };
+      this._server!.once('listening', onListening);
+      this._server!.once('error', onError);
+    });
+
+    // Ongoing error handler for post-startup errors
+    this._server.on('error', (err: Error) => {
+      console.error(`[TPCPNode] WebSocket server error: ${err.message}`);
+      this.emit('error', err);
+    });
+
     this._server.on("connection", (ws: WebSocket) => {
-      ws.on("message", async (data: WebSocket.RawData) => {
+      ws.on("message", async (data: WsLib.RawData) => {
         await this._handleInbound(data.toString());
       });
     });
@@ -200,7 +273,8 @@ export class TPCPNode extends EventEmitter {
 
   public async stopListening(): Promise<void> {
     this._running = false;
-    
+    if (this._cleanupInterval) clearInterval(this._cleanupInterval);
+
     for (const [_, ws] of this._peerConnections) {
       try { ws.close(); } catch (e) {}
     }
@@ -224,7 +298,7 @@ export class TPCPNode extends EventEmitter {
     const connect = () => {
       if (!this._running) return;
 
-      const ws = new WebSocket(this.adnsUrl!);
+      const ws = new WS(this.adnsUrl!);
       this._adnsWs = ws;
       this._adnsRegistered = false;
 
@@ -234,7 +308,7 @@ export class TPCPNode extends EventEmitter {
         await this.broadcastDiscovery();
       });
 
-      ws.on("message", async (data: WebSocket.RawData) => {
+      ws.on("message", async (data: WsLib.RawData) => {
         const raw = data.toString();
         try {
           const parsed = JSON.parse(raw);
@@ -281,7 +355,7 @@ export class TPCPNode extends EventEmitter {
         }
       });
 
-      ws.on("error", (err) => {
+      ws.on("error", (err: Error) => {
         console.error(`A-DNS error: ${err.message}`);
       });
     };
@@ -293,6 +367,13 @@ export class TPCPNode extends EventEmitter {
     try {
       const parsed = JSON.parse(rawMessage);
       const envelope = TPCPEnvelopeSchema.parse(parsed);
+
+      const messageId = envelope.header.message_id;
+      if (this._seenMessages.has(messageId)) {
+        console.debug(`[TPCPNode] duplicate message ${messageId} -- dropping`);
+        return;
+      }
+      this._seenMessages.set(messageId, Date.now());
 
       // TTL enforcement
       if (envelope.header.ttl <= 0) {
@@ -322,6 +403,7 @@ export class TPCPNode extends EventEmitter {
       await this._routeIntent(envelope);
     } catch (e) {
       console.error(`Failed to process inbound message:`, e);
+      this.emit('error', e instanceof Error ? e : new Error(String(e)));
     }
   }
 
@@ -347,38 +429,49 @@ export class TPCPNode extends EventEmitter {
   private _handleHandshake(envelope: TPCPEnvelope): void {
     console.log(`Handshake received from ${envelope.header.sender_id}`);
 
-    // Auto-register from payload
-    const payload = envelope.payload as any;
-    if (payload && payload.content) {
-      try {
-        const senderIdentity = JSON.parse(payload.content) as AgentIdentity;
+    // Auto-register from payload — only text payloads carry identity JSON
+    if (envelope.payload.payload_type !== 'text') return;
+    const textPayload = envelope.payload;
+    if (!textPayload.content) return;
 
-        // Security: verify handshake signature before auto-registering the peer
-        if (!envelope.signature) {
-          console.warn(`Handshake dropped: unsigned packet from ${envelope.header.sender_id}`);
-          return;
-        }
-        if (!AgentIdentityManager.verifySignature(senderIdentity.public_key, envelope.signature, payload)) {
-          console.warn(`Handshake dropped: invalid signature from ${envelope.header.sender_id}`);
-          return;
-        }
-
-        this.peerRegistry.set(senderIdentity.agent_id, {
-          identity: senderIdentity,
-          // TODO: address must be resolved via A-DNS relay or direct connection context;
-          // the actual remote address is not available here without websocket refactoring.
-          address: `ws://unknown`
-        });
-        console.log(`Auto-registered peer: ${senderIdentity.framework} (${senderIdentity.agent_id})`);
-      } catch (e) {
-        // Not parseable, skip
+    try {
+      const parsed = JSON.parse(textPayload.content);
+      // Validate required AgentIdentity fields before trusting
+      if (!parsed.agent_id || !parsed.framework || !parsed.public_key) {
+        console.warn(`Handshake: invalid identity structure from ${envelope.header.sender_id}`);
+        return;
       }
+      const senderIdentity = parsed as AgentIdentity;
+
+      // Security: verify handshake signature before auto-registering the peer
+      if (!envelope.signature) {
+        console.warn(`Handshake dropped: unsigned packet from ${envelope.header.sender_id}`);
+        return;
+      }
+      if (!AgentIdentityManager.verifySignature(senderIdentity.public_key, envelope.signature, textPayload)) {
+        console.warn(`Handshake dropped: invalid signature from ${envelope.header.sender_id}`);
+        return;
+      }
+
+      // Security: reject identity spoofing — payload agent_id must match header sender_id
+      if (senderIdentity.agent_id !== envelope.header.sender_id) {
+        console.warn(`Handshake dropped: agent_id mismatch (payload=${senderIdentity.agent_id}, header=${envelope.header.sender_id})`);
+        return;
+      }
+
+      this.peerRegistry.set(senderIdentity.agent_id, {
+        identity: senderIdentity,
+        address: ''
+      });
+      console.log(`Auto-registered peer: ${senderIdentity.framework} (${senderIdentity.agent_id})`);
+    } catch (e) {
+      // Not parseable, skip
     }
   }
 
   private _handleStateSync(payload: CRDTSyncPayload): void {
-    if (payload.crdt_type === "LWW-Map") {
-      this.sharedMemory.merge(payload.state as unknown as Record<string, { value: any; timestamp: number; writer_id: string }>);
+    if (payload.crdt_type === "LWW-Map" && payload.state) {
+      this.sharedMemory.merge(payload.state as Record<string, { value: any; timestamp: number; writer_id: string }>);
       this.emit("onStateSync", this.sharedMemory.toDict());
     }
   }
@@ -407,6 +500,13 @@ export class TPCPNode extends EventEmitter {
   }
 
   public async sendMessage(targetId: string, intent: Intent, payload: Record<string, any>): Promise<void> {
+    // Validate payload against schema before sending
+    const parsed = PayloadSchema.safeParse(payload);
+    if (!parsed.success) {
+      throw new Error(`Invalid payload: ${parsed.error.message}`);
+    }
+    const validatedPayload = parsed.data as Record<string, any>;
+
     const header: MessageHeader = {
       message_id: globalThis.crypto.randomUUID(),
       timestamp: new Date().toISOString(),
@@ -417,11 +517,47 @@ export class TPCPNode extends EventEmitter {
       protocol_version: PROTOCOL_VERSION
     };
 
-    const signature = this.identityManager.signPayload(payload);
-    const envelope: TPCPEnvelope = { header, payload: payload as any, signature };
+    const signature = this.identityManager.signPayload(validatedPayload);
+    const envelope: TPCPEnvelope = { header, payload: validatedPayload as any, signature };
     const serialized = JSON.stringify(envelope);
 
     await this._dispatchEnvelope(targetId, serialized, header.message_id);
+  }
+
+  private _createConnection(peerId: string, address: string): Promise<WebSocket> {
+    const ws = new WS(address);
+    return new Promise<WebSocket>((resolve, reject) => {
+      ws.on('close', () => {
+        this._peerConnections.delete(peerId);
+        this.emit('peer:disconnected', peerId);
+      });
+      ws.on('error', reject);
+      ws.on('open', () => {
+        this._peerConnections.set(peerId, ws);
+        this.emit('peer:connected', peerId);
+        resolve(ws);
+      });
+    });
+  }
+
+  private async _getOrCreateConnection(peerId: string, address: string): Promise<WebSocket> {
+    const existing = this._peerConnections.get(peerId);
+    if (existing && existing.readyState === WS.OPEN) {
+      return existing;
+    }
+
+    if (this._pendingConnections.has(peerId)) {
+      return this._pendingConnections.get(peerId)!;
+    }
+
+    const promise = this._createConnection(peerId, address);
+    this._pendingConnections.set(peerId, promise);
+    try {
+      const ws = await promise;
+      return ws;
+    } finally {
+      this._pendingConnections.delete(peerId);
+    }
   }
 
   private async _dispatchEnvelope(targetId: string, serialized: string, messageId: string): Promise<void> {
@@ -433,15 +569,7 @@ export class TPCPNode extends EventEmitter {
     }
 
     try {
-      let ws = this._peerConnections.get(targetId);
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        ws = new WebSocket(peer.address);
-        await new Promise<void>((resolve, reject) => {
-          ws!.on('open', resolve);
-          ws!.on('error', reject);
-        });
-        this._peerConnections.set(targetId, ws);
-      }
+      const ws = await this._getOrCreateConnection(targetId, peer.address);
       ws.send(serialized);
     } catch (e) {
       console.warn(`Connection to ${targetId} failed. Pushing to DLQ.`);
@@ -452,16 +580,34 @@ export class TPCPNode extends EventEmitter {
   }
 
   private _reconnectAndDrain(targetId: string): void {
+    // Prevent duplicate reconnect loops for the same peer
+    if (this._reconnecting.has(targetId)) return;
+    this._reconnecting.add(targetId);
+
     const peer = this.peerRegistry.get(targetId);
-    if (!peer) return;
+    if (!peer) {
+      this._reconnecting.delete(targetId);
+      return;
+    }
 
     let backoff = 1000;
     const maxBackoff = 60000;
+    let retries = 0;
+    const maxRetries = 10;
 
     const attempt = () => {
-      if (!this._running || !this.messageQueue.hasMessages(targetId)) return;
+      if (!this._running || !this.messageQueue.hasMessages(targetId)) {
+        this._reconnecting.delete(targetId);
+        return;
+      }
+      if (retries >= maxRetries) {
+        console.warn(`[DLQ] Max retries (${maxRetries}) reached for ${targetId}. Giving up.`);
+        this._reconnecting.delete(targetId);
+        return;
+      }
+      retries++;
 
-      const ws = new WebSocket(peer.address);
+      const ws = new WS(peer.address);
       ws.on('open', () => {
         console.log(`[Network Restored] Draining DLQ for ${targetId}...`);
         this._peerConnections.set(targetId, ws);
@@ -469,15 +615,21 @@ export class TPCPNode extends EventEmitter {
 
         const drainNext = () => {
           const msg = this.messageQueue.dequeueOne(targetId);
-          if (!msg) return;
+          if (!msg) {
+            this._reconnecting.delete(targetId);
+            return;
+          }
           try {
             ws.send(msg.data);
             console.log(`Drained ${msg.messageId} to ${targetId}.`);
             if (this.messageQueue.hasMessages(targetId)) {
               drainNext();
+            } else {
+              this._reconnecting.delete(targetId);
             }
           } catch (e) {
             this.messageQueue.enqueueFront(targetId, msg.data, msg.messageId);
+            this._reconnecting.delete(targetId);
           }
         };
         drainNext();
@@ -515,13 +667,13 @@ export class TPCPNode extends EventEmitter {
     const envelope: TPCPEnvelope = { header, payload, signature };
     const serialized = JSON.stringify(envelope);
 
-    if (this._adnsWs && this._adnsWs.readyState === WebSocket.OPEN) {
+    if (this._adnsWs && this._adnsWs.readyState === WS.OPEN) {
       this._adnsWs.send(serialized);
     }
 
     for (const address of seedNodes) {
       try {
-        const ws = new WebSocket(address);
+        const ws = new WS(address);
         ws.on('open', () => {
           ws.send(serialized);
           ws.close();

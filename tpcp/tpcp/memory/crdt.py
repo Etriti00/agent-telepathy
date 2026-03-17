@@ -81,54 +81,54 @@ class LWWMap:
                     self._state[key] = (value, ts, writer)
                     self.logical_clock = max(self.logical_clock, ts)
 
-    async def _persist(self, key: str, value: Any, timestamp: int, writer_id: str) -> None:
-        """Write-through to SQLite on mutation."""
+    async def _persist_unlocked(self, key: str, value: Any, timestamp: int, writer_id: str) -> None:
+        """Write-through to SQLite on mutation. Caller MUST hold self._lock."""
         if not self._conn:
             return
         value_json = json.dumps(value, default=str, sort_keys=True)
-        async with self._lock:
-            await self._conn.execute(
-                "INSERT OR REPLACE INTO lww_map (key, value, timestamp, writer_id) VALUES (?, ?, ?, ?)",
-                (key, value_json, timestamp, writer_id)
-            )
-            await self._conn.commit()
+        await self._conn.execute(
+            "INSERT OR REPLACE INTO lww_map (key, value, timestamp, writer_id) VALUES (?, ?, ?, ?)",
+            (key, value_json, timestamp, writer_id)
+        )
+        await self._conn.commit()
 
     async def set(self, key: str, value: Any, timestamp: Optional[int] = None, writer_id: Optional[str] = None) -> None:
         """
         Sets a key to a value in the map.
         If a timestamp is not provided, increments the logical clock.
         """
-        if timestamp is None:
-            self.logical_clock += 1
-            timestamp = self.logical_clock
-            writer_id = self.node_id
-        else:
-            self.logical_clock = max(self.logical_clock, timestamp)
-            if writer_id is None:
+        async with self._lock:
+            if timestamp is None:
+                self.logical_clock += 1
+                timestamp = self.logical_clock
                 writer_id = self.node_id
+            else:
+                self.logical_clock = max(self.logical_clock, timestamp)
+                if writer_id is None:
+                    writer_id = self.node_id
 
-        updated = False
+            updated = False
 
-        if key in self._state:
-            existing_value, existing_ts, existing_writer = self._state[key]
-            
-            if timestamp > existing_ts:
-                self._state[key] = (value, timestamp, writer_id)
-                updated = True
-            elif timestamp == existing_ts:
-                if writer_id > existing_writer:
+            if key in self._state:
+                existing_value, existing_ts, existing_writer = self._state[key]
+
+                if timestamp > existing_ts:
                     self._state[key] = (value, timestamp, writer_id)
                     updated = True
-                elif writer_id == existing_writer:
-                    if json.dumps(value, sort_keys=True, default=str) > json.dumps(existing_value, sort_keys=True, default=str):
+                elif timestamp == existing_ts:
+                    if writer_id > existing_writer:
                         self._state[key] = (value, timestamp, writer_id)
                         updated = True
-        else:
-            self._state[key] = (value, timestamp, writer_id)
-            updated = True
+                    elif writer_id == existing_writer:
+                        if json.dumps(value, sort_keys=True, default=str) > json.dumps(existing_value, sort_keys=True, default=str):
+                            self._state[key] = (value, timestamp, writer_id)
+                            updated = True
+            else:
+                self._state[key] = (value, timestamp, writer_id)
+                updated = True
 
-        if updated:
-            await self._persist(key, value, timestamp, writer_id)
+            if updated:
+                await self._persist_unlocked(key, value, timestamp, writer_id)
 
     def get(self, key: str) -> Any:
         """Returns the mapped value for the given key, or None if absent."""

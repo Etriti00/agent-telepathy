@@ -1,6 +1,6 @@
 # tpcp-rs — Rust SDK for TPCP
 
-Rust implementation of the Telepathy Communication Protocol (TPCP) v0.4.0.
+Rust implementation of the Telepathy Communication Protocol (TPCP) v0.4.1.
 
 ## Workspace Crates
 

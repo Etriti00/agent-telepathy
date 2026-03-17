@@ -11,7 +11,17 @@ import java.util.concurrent.LinkedBlockingQueue;
  * Capacity capped at 100 to prevent unbounded growth.
  */
 public class DLQ {
-    private final LinkedBlockingQueue<TPCPEnvelope> queue = new LinkedBlockingQueue<>(100);
+    private final LinkedBlockingQueue<TPCPEnvelope> queue;
+
+    /** Creates a DLQ with default capacity of 100. */
+    public DLQ() {
+        this(100);
+    }
+
+    /** Creates a DLQ with the specified capacity. */
+    public DLQ(int capacity) {
+        this.queue = new LinkedBlockingQueue<>(capacity);
+    }
 
     /** Adds an envelope to the queue. Returns false if the queue is full. */
     public boolean enqueue(TPCPEnvelope envelope) {

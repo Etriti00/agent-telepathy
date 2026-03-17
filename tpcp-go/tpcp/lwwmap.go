@@ -2,13 +2,15 @@ package tpcp
 
 import "sync"
 
-// lwwEntry holds a value and its write timestamp.
+// lwwEntry holds a value, its write timestamp, and the writer identity.
 type lwwEntry struct {
 	Value       interface{}
 	TimestampMs int64
+	WriterID    string
 }
 
 // LWWMap is a Last-Write-Wins CRDT map, safe for concurrent use.
+// Tie-breaking: timestamp > writer_id (lexicographic), matching Python's LWWMap.
 type LWWMap struct {
 	mu      sync.RWMutex
 	entries map[string]lwwEntry
@@ -19,14 +21,20 @@ func NewLWWMap() *LWWMap {
 	return &LWWMap{entries: make(map[string]lwwEntry)}
 }
 
-// Set writes a value with the given timestamp. No-op if a newer value exists.
-func (m *LWWMap) Set(key string, value interface{}, timestampMs int64) {
+// Set writes a value with the given timestamp and writer ID.
+// No-op if a newer value exists. Equal timestamps are broken by writer_id (higher wins).
+func (m *LWWMap) Set(key string, value interface{}, timestampMs int64, writerID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if existing, ok := m.entries[key]; ok && existing.TimestampMs >= timestampMs {
-		return
+	if existing, ok := m.entries[key]; ok {
+		if existing.TimestampMs > timestampMs {
+			return
+		}
+		if existing.TimestampMs == timestampMs && existing.WriterID >= writerID {
+			return
+		}
 	}
-	m.entries[key] = lwwEntry{Value: value, TimestampMs: timestampMs}
+	m.entries[key] = lwwEntry{Value: value, TimestampMs: timestampMs, WriterID: writerID}
 }
 
 // Get returns the value for key, or (nil, false) if not present.
@@ -54,7 +62,7 @@ func (m *LWWMap) Merge(other *LWWMap) {
 	other.mu.RUnlock()
 
 	for i, k := range keys {
-		m.Set(k, snapshot[i].Value, snapshot[i].TimestampMs)
+		m.Set(k, snapshot[i].Value, snapshot[i].TimestampMs, snapshot[i].WriterID)
 	}
 }
 

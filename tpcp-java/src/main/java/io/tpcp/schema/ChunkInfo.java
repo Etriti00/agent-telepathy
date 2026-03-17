@@ -16,6 +16,8 @@ public class ChunkInfo {
     public ChunkInfo() {}
 
     public ChunkInfo(int chunkIndex, int totalChunks, String transferId) {
+        if (chunkIndex < 0) throw new IllegalArgumentException("chunkIndex must be >= 0");
+        if (totalChunks < 1) throw new IllegalArgumentException("totalChunks must be >= 1");
         this.chunkIndex = chunkIndex;
         this.totalChunks = totalChunks;
         this.transferId = transferId;

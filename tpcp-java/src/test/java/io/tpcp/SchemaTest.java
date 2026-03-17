@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.tpcp.schema.*;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class SchemaTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -104,5 +105,67 @@ class SchemaTest {
         assertEquals(0, deserialized.chunkInfo.chunkIndex);
         assertEquals(3, deserialized.chunkInfo.totalChunks);
         assertEquals("xfer-100", deserialized.chunkInfo.transferId);
+    }
+
+    @Test
+    void textPayloadRejectsNullContent() {
+        assertThrows(IllegalArgumentException.class,
+            () -> new TextPayload(null, "en"));
+    }
+
+    @Test
+    void vectorEmbeddingRejectsZeroDimensions() {
+        assertThrows(IllegalArgumentException.class,
+            () -> new VectorEmbeddingPayload("model", 0, java.util.List.of()));
+    }
+
+    @Test
+    void telemetryRejectsEmptySensorId() {
+        assertThrows(IllegalArgumentException.class,
+            () -> new TelemetryPayload("", "rpm", java.util.List.of(), "opcua"));
+    }
+
+    @Test
+    void telemetryPayloadRoundTrip() throws Exception {
+        TelemetryReading reading = new TelemetryReading(98.6, 1710000000000L, "good");
+        TelemetryPayload original = new TelemetryPayload(
+            "sensor-01", "celsius",
+            java.util.List.of(reading),
+            "opcua"
+        );
+
+        String json = MAPPER.writeValueAsString(original);
+
+        assertTrue(json.contains("\"sensor_id\":\"sensor-01\""));
+        assertTrue(json.contains("\"unit\":\"celsius\""));
+        assertTrue(json.contains("\"source_protocol\":\"opcua\""));
+        assertTrue(json.contains("\"payload_type\":\"telemetry\""));
+
+        TelemetryPayload deserialized = MAPPER.readValue(json, TelemetryPayload.class);
+        assertEquals("sensor-01", deserialized.sensorId);
+        assertEquals("celsius", deserialized.unit);
+        assertEquals("opcua", deserialized.sourceProtocol);
+        assertEquals("telemetry", deserialized.payloadType);
+        assertNotNull(deserialized.readings);
+        assertEquals(1, deserialized.readings.size());
+
+        TelemetryReading deserializedReading = deserialized.readings.get(0);
+        assertEquals(98.6, deserializedReading.value, 1e-9);
+        assertEquals(1710000000000L, deserializedReading.timestampMs);
+        assertEquals("good", deserializedReading.quality);
+    }
+
+    @Test
+    void telemetryPayloadRejectsNullUnit() {
+        assertThrows(IllegalArgumentException.class,
+            () -> new TelemetryPayload("sensor-01", null, java.util.List.of(), "opcua"));
+    }
+
+    @Test
+    void telemetryReadingSerializesNullQualityAsAbsent() throws Exception {
+        TelemetryReading reading = new TelemetryReading(42.0, 1710000000001L, null);
+        String json = MAPPER.writeValueAsString(reading);
+        assertFalse(json.contains("\"quality\""),
+            "null quality must be omitted from JSON due to @JsonInclude(NON_NULL)");
     }
 }

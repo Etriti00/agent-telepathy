@@ -8,15 +8,20 @@ import java.util.stream.Collectors;
 /**
  * Last-Write-Wins CRDT map, thread-safe via ConcurrentHashMap.
  *
- * <p>Higher {@code timestampMs} always wins. Equal timestamps keep the existing value.
+ * <p>Tie-breaking: timestamp > writer_id (lexicographic), matching Python's LWWMap.
  */
 public class LWWMap {
     private final ConcurrentHashMap<String, LWWEntry> map = new ConcurrentHashMap<>();
 
-    /** Writes a value with the given timestamp. No-op if a newer value exists. */
-    public void set(String key, Object value, long timestampMs) {
-        map.merge(key, new LWWEntry(value, timestampMs), (existing, incoming) ->
-                incoming.timestampMs > existing.timestampMs ? incoming : existing);
+    /** Writes a value with the given timestamp and writer ID. No-op if a newer value exists. */
+    public void set(String key, Object value, long timestampMs, String writerId) {
+        java.util.Objects.requireNonNull(writerId, "writerId must not be null");
+        map.merge(key, new LWWEntry(value, timestampMs, writerId), (existing, incoming) -> {
+            if (incoming.timestampMs > existing.timestampMs) return incoming;
+            if (incoming.timestampMs == existing.timestampMs
+                    && incoming.writerId.compareTo(existing.writerId) > 0) return incoming;
+            return existing;
+        });
     }
 
     /** Returns the value for a key, or empty if absent. */
@@ -27,7 +32,7 @@ public class LWWMap {
 
     /** Merges all entries from {@code other} using LWW semantics. */
     public void merge(LWWMap other) {
-        other.map.forEach((k, v) -> set(k, v.value, v.timestampMs));
+        other.map.forEach((k, v) -> set(k, v.value, v.timestampMs, v.writerId));
     }
 
     /** Returns a plain map snapshot of current values. */
@@ -36,5 +41,5 @@ public class LWWMap {
                 .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().value));
     }
 
-    private record LWWEntry(Object value, long timestampMs) {}
+    private record LWWEntry(Object value, long timestampMs, String writerId) {}
 }

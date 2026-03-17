@@ -25,10 +25,12 @@ to the cryptographically enforced TPCP Agent WebSocket Mesh.
 """
 
 import logging
+import os
+import time
 from typing import Optional
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
 from tpcp.schemas.envelope import (
@@ -48,6 +50,35 @@ app = FastAPI(title="TPCP Stateless Webhook Gateway", version=PROTOCOL_VERSION)
 _gateway_identity: Optional[AgentIdentity] = None
 _identity_manager: Optional[AgentIdentityManager] = None
 _local_tpcp_node = None
+
+
+_rate_limits: dict = {}  # ip -> (count, window_start)
+
+
+def _verify_auth(request: Request):
+    """Bearer token auth — only enforced when TPCP_WEBHOOK_SECRET is set."""
+    secret = os.environ.get("TPCP_WEBHOOK_SECRET")
+    if not secret:
+        return
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer ") or auth[7:] != secret:
+        raise HTTPException(status_code=401, detail="Invalid or missing Bearer token")
+
+
+def _check_rate_limit(request: Request):
+    """Per-IP rate limit: max 60 requests per minute."""
+    ip = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    if ip in _rate_limits:
+        count, window_start = _rate_limits[ip]
+        if now - window_start > 60:
+            _rate_limits[ip] = (1, now)
+        elif count >= 60:
+            raise HTTPException(status_code=429, detail="Rate limit exceeded")
+        else:
+            _rate_limits[ip] = (count + 1, window_start)
+    else:
+        _rate_limits[ip] = (1, now)
 
 
 class WebhookIntentRequest(BaseModel):
@@ -70,7 +101,7 @@ def configure_gateway(identity: AgentIdentity, identity_manager: AgentIdentityMa
 
 
 @app.post("/webhook/intent")
-async def trigger_swarm_intent(req: WebhookIntentRequest):
+async def trigger_swarm_intent(req: WebhookIntentRequest, _auth=Depends(_verify_auth), _rate=Depends(_check_rate_limit)):
     """
     HTTP POST trigger. Wraps the incoming JSON body into a signed TPCP TextPayload envelope
     and routes it to the local TPCP node for dispatch to the target agent.

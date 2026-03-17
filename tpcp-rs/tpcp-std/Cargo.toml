@@ -1,6 +1,6 @@
 [package]
 name = "tpcp-std"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 description = "Async TPCP node for std environments (tokio + tokio-tungstenite)"
 license = "AGPL-3.0"
@@ -14,6 +14,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4"] }
 ed25519-dalek = { version = "2", features = ["std"] }
+chrono = "0.4"
 
 [[example]]
 name = "hello"

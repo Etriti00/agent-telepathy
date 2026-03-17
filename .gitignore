@@ -68,3 +68,12 @@ docker-compose.override.yml
 *.key
 !*.key.pub
 credentials.json
+
+# ── Log files ────────────────────────────────────────────────────────────────
+*.log
+
+# ── Playwright MCP ───────────────────────────────────────────────────────────
+.playwright-mcp/
+
+# ── Internal tooling (not part of the project) ───────────────────────────────
+docs/superpowers/

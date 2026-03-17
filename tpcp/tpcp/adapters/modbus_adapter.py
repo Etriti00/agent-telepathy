@@ -297,7 +297,7 @@ class ModbusAdapter(BaseFrameworkAdapter):
         polls = 0
         while max_polls is None or polls < max_polls:
             try:
-                timestamp_ms = int(time.time() * 1000)
+                timestamp_ms = time.time_ns() // 1_000_000
                 for offset in range(count):
                     address = start_address + offset
                     try:

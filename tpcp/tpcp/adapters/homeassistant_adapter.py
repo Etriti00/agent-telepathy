@@ -93,7 +93,7 @@ class HomeAssistantAdapter(BaseFrameworkAdapter):
         memory_state = {
             f"ha_{entity_id}": {
                 "value": state_data.get("state"),
-                "timestamp": int(time.monotonic() * 1000),
+                "timestamp": time.time_ns() // 1_000_000,
                 "writer_id": str(self.identity.agent_id)
             }
         }
@@ -114,8 +114,8 @@ class HomeAssistantAdapter(BaseFrameworkAdapter):
         )
 
         envelope = TPCPEnvelope(header=header, payload=payload)
-        if self.identity_manager:
-            envelope.signature = self.identity_manager.sign_payload(payload.model_dump())
+        im = self._require_identity_manager()
+        envelope.signature = im.sign_payload(payload.model_dump())
         return envelope
 
     async def execute_service_call(self, domain: str, service: str, entity_id: str, service_data: Optional[dict] = None) -> bool:

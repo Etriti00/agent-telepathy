@@ -24,6 +24,9 @@ public class TelemetryPayload {
 
     public TelemetryPayload(String sensorId, String unit,
                             List<TelemetryReading> readings, String sourceProtocol) {
+        if (sensorId == null || sensorId.isEmpty()) throw new IllegalArgumentException("sensorId must not be null or empty");
+        if (unit == null || unit.isEmpty()) throw new IllegalArgumentException("unit must not be null or empty");
+        if (sourceProtocol == null || sourceProtocol.isEmpty()) throw new IllegalArgumentException("sourceProtocol must not be null or empty");
         this.sensorId = sensorId;
         this.unit = unit;
         this.readings = readings;

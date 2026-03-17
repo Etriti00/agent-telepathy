@@ -41,7 +41,7 @@ func main() {
 	defer client.Stop()
 
 	payload := tpcp.NewTextPayload("hello from Go client")
-	if err := client.SendMessage("ws://localhost:9000", tpcp.IntentHandshake, payload); err != nil {
+	if err := client.SendMessage("ws://localhost:9000", serverIdentity.AgentID, tpcp.IntentHandshake, payload); err != nil {
 		log.Fatal(err)
 	}
 
