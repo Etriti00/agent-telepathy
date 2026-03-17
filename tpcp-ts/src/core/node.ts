@@ -184,6 +184,7 @@ export class TPCPNode extends EventEmitter {
   private _adnsRegistered: boolean = false;
   protected _running: boolean = false;
   private _peerConnections: Map<string, WebSocket> = new Map();
+  private _reconnecting: Set<string> = new Set();
   private _pendingConnections: Map<string, Promise<WebSocket>> = new Map();
   _seenMessages: Map<string, number> = new Map();
   _cleanupInterval: ReturnType<typeof setInterval> | null = null;
@@ -235,13 +236,23 @@ export class TPCPNode extends EventEmitter {
     this._server = new WsServer({ host: this.host, port: this.port });
     this._running = true;
 
-    await new Promise<void>((resolve) => {
-      this._server!.on('listening', () => {
+    await new Promise<void>((resolve, reject) => {
+      const onListening = () => {
+        this._server!.off('error', onError);
         this.emit('ready');
         resolve();
-      });
+      };
+      const onError = (err: Error) => {
+        this._server!.off('listening', onListening);
+        console.error(`[TPCPNode] WebSocket server error: ${err.message}`);
+        this.emit('error', err);
+        reject(err);
+      };
+      this._server!.once('listening', onListening);
+      this._server!.once('error', onError);
     });
 
+    // Ongoing error handler for post-startup errors
     this._server.on('error', (err: Error) => {
       console.error(`[TPCPNode] WebSocket server error: ${err.message}`);
       this.emit('error', err);
@@ -442,6 +453,12 @@ export class TPCPNode extends EventEmitter {
         return;
       }
 
+      // Security: reject identity spoofing — payload agent_id must match header sender_id
+      if (senderIdentity.agent_id !== envelope.header.sender_id) {
+        console.warn(`Handshake dropped: agent_id mismatch (payload=${senderIdentity.agent_id}, header=${envelope.header.sender_id})`);
+        return;
+      }
+
       this.peerRegistry.set(senderIdentity.agent_id, {
         identity: senderIdentity,
         address: ''
@@ -563,8 +580,15 @@ export class TPCPNode extends EventEmitter {
   }
 
   private _reconnectAndDrain(targetId: string): void {
+    // Prevent duplicate reconnect loops for the same peer
+    if (this._reconnecting.has(targetId)) return;
+    this._reconnecting.add(targetId);
+
     const peer = this.peerRegistry.get(targetId);
-    if (!peer) return;
+    if (!peer) {
+      this._reconnecting.delete(targetId);
+      return;
+    }
 
     let backoff = 1000;
     const maxBackoff = 60000;
@@ -572,9 +596,13 @@ export class TPCPNode extends EventEmitter {
     const maxRetries = 10;
 
     const attempt = () => {
-      if (!this._running || !this.messageQueue.hasMessages(targetId)) return;
+      if (!this._running || !this.messageQueue.hasMessages(targetId)) {
+        this._reconnecting.delete(targetId);
+        return;
+      }
       if (retries >= maxRetries) {
         console.warn(`[DLQ] Max retries (${maxRetries}) reached for ${targetId}. Giving up.`);
+        this._reconnecting.delete(targetId);
         return;
       }
       retries++;
@@ -587,15 +615,21 @@ export class TPCPNode extends EventEmitter {
 
         const drainNext = () => {
           const msg = this.messageQueue.dequeueOne(targetId);
-          if (!msg) return;
+          if (!msg) {
+            this._reconnecting.delete(targetId);
+            return;
+          }
           try {
             ws.send(msg.data);
             console.log(`Drained ${msg.messageId} to ${targetId}.`);
             if (this.messageQueue.hasMessages(targetId)) {
               drainNext();
+            } else {
+              this._reconnecting.delete(targetId);
             }
           } catch (e) {
             this.messageQueue.enqueueFront(targetId, msg.data, msg.messageId);
+            this._reconnecting.delete(targetId);
           }
         };
         drainNext();
