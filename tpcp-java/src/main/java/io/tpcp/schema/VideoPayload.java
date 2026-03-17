@@ -38,6 +38,7 @@ public class VideoPayload {
 
     public VideoPayload(String dataBase64, String mimeType) {
         if (dataBase64 == null) throw new IllegalArgumentException("dataBase64 must not be null");
+        if (mimeType == null) throw new IllegalArgumentException("mimeType must not be null");
         try { Base64.getDecoder().decode(dataBase64); } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException("dataBase64 is not valid base64", e);
         }
