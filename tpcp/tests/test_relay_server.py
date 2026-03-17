@@ -11,6 +11,7 @@ from uuid import uuid4
 
 import time as _time
 
+
 from tpcp.relay.server import ADNSRelayServer, TokenBucket, BROADCAST_ID
 from tpcp.security.crypto import AgentIdentityManager
 
@@ -645,3 +646,4 @@ def test_public_key_format_validation_accepts_valid():
     valid_key = base64.b64encode(b"x" * 32).decode()
     decoded = base64.b64decode(valid_key)
     assert len(decoded) == 32
+
