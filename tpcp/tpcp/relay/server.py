@@ -104,7 +104,6 @@ class ADNSRelayServer:
         self._challenge_rate_limits: Dict[str, list] = {}
 
     async def _handle_connection(self, websocket: ServerConnection) -> None:
-        agent_id = None
         ws_id = id(websocket)
         self._rate_limiters[ws_id] = TokenBucket(self.rate_limit, self.burst_limit)
         

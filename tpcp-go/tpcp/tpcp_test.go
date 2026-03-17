@@ -392,15 +392,15 @@ func TestStopDoesNotDeadlock(t *testing.T) {
 	}
 	node := NewTPCPNode(identity, priv)
 
-	// Find a free port
+	// Find a free port by binding to :0, recording the port, then releasing.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	port := ln.Addr().(*net.TCPAddr).Port
+	addr := ln.Addr().String()
 	ln.Close()
 
-	if err := node.Listen("127.0.0.1", port); err != nil {
+	if err := node.Listen(addr); err != nil {
 		t.Fatal(err)
 	}
 
