@@ -27,7 +27,7 @@ def _make_envelope(msg_id: str = None) -> TPCPEnvelope:
 @pytest.mark.asyncio
 async def test_enqueue_and_dequeue():
     q = MessageQueue(max_size_per_peer=10)
-    target = uuid4()
+    target = str(uuid4())
     env = _make_envelope()
     await q.enqueue(target, env)
     assert await q.has_messages(target)
@@ -40,21 +40,21 @@ async def test_enqueue_and_dequeue():
 @pytest.mark.asyncio
 async def test_queue_stats():
     q = MessageQueue(max_size_per_peer=100)
-    t1 = uuid4()
-    t2 = uuid4()
+    t1 = str(uuid4())
+    t2 = str(uuid4())
     await q.enqueue(t1, _make_envelope())
     await q.enqueue(t1, _make_envelope())
     await q.enqueue(t2, _make_envelope())
 
     stats = q.queue_stats
-    assert stats[str(t1)] == 2
-    assert stats[str(t2)] == 1
+    assert stats[t1] == 2
+    assert stats[t2] == 1
 
 
 @pytest.mark.asyncio
 async def test_enqueue_front():
     q = MessageQueue(max_size_per_peer=10)
-    target = uuid4()
+    target = str(uuid4())
     env1 = _make_envelope()
     env2 = _make_envelope()
     await q.enqueue(target, env1)
@@ -66,7 +66,7 @@ async def test_enqueue_front():
 @pytest.mark.asyncio
 async def test_drain():
     q = MessageQueue(max_size_per_peer=10)
-    target = uuid4()
+    target = str(uuid4())
     for _ in range(5):
         await q.enqueue(target, _make_envelope())
     drained = await q.drain(target)
@@ -77,8 +77,8 @@ async def test_drain():
 @pytest.mark.asyncio
 async def test_max_size_eviction():
     q = MessageQueue(max_size_per_peer=3)
-    target = uuid4()
+    target = str(uuid4())
     for _ in range(5):
         await q.enqueue(target, _make_envelope())
     stats = q.queue_stats
-    assert stats[str(target)] == 3
+    assert stats[target] == 3

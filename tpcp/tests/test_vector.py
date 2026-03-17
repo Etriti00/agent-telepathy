@@ -15,6 +15,23 @@ def test_vector_bank_store_and_get():
     assert result["vector"] == [1.0, 2.0, 3.0]
 
 
+def test_get_vector_returns_defensive_copy():
+    """Mutating the returned vector must not corrupt the stored embedding."""
+    bank = VectorBank("test-node")
+    pid = uuid4()
+    bank.store_vector(pid, [1.0, 2.0, 3.0], "test-model")
+
+    result = bank.get_vector(pid)
+    assert result is not None
+    # Mutate the returned list
+    result["vector"].append(999.0)
+    result["vector"][0] = -1.0
+
+    # Re-fetch — must be the original, unmodified vector
+    fresh = bank.get_vector(pid)
+    assert fresh["vector"] == [1.0, 2.0, 3.0], "Stored vector was mutated by caller"
+
+
 def test_vector_bank_get_missing():
     bank = VectorBank("test-node")
     assert bank.get_vector(uuid4()) is None
