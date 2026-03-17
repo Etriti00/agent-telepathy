@@ -28,19 +28,8 @@ jobs:
       - name: Import GPG key
         run: echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
 
-      - name: Test credentials against Central Portal API
-        env:
-          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
-          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
-        run: |
-          ENCODED=$(echo -n "${MAVEN_USERNAME}:${MAVEN_PASSWORD}" | base64)
-          echo "Testing with Bearer auth (base64 encoded token)..."
-          curl -s -o /dev/null -w "HTTP Bearer Status: %{http_code}\n" \
-            -H "Authorization: Bearer ${ENCODED}" \
-            "https://central.sonatype.com/api/v1/publisher/published?namespace=io.github.etriti00"
-
       - name: Publish to Maven Central
-        run: cd tpcp-java && mvn --batch-mode -e deploy
+        run: cd tpcp-java && mvn --batch-mode deploy
         env:
           MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
