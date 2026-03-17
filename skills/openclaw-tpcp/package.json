@@ -1,0 +1,16 @@
+{
+  "name": "openclaw-tpcp",
+  "version": "0.4.1",
+  "description": "TPCP multi-agent networking for OpenClaw",
+  "private": true,
+  "main": "lib/agent.js",
+  "scripts": {
+    "test": "node lib/agent.js --help"
+  },
+  "dependencies": {
+    "tpcp-sdk": "^0.4.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
