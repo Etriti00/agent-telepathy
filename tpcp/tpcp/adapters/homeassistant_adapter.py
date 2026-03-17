@@ -93,7 +93,7 @@ class HomeAssistantAdapter(BaseFrameworkAdapter):
         memory_state = {
             f"ha_{entity_id}": {
                 "value": state_data.get("state"),
-                "timestamp": int(time.monotonic() * 1000),
+                "timestamp": time.time_ns() // 1_000_000,
                 "writer_id": str(self.identity.agent_id)
             }
         }
