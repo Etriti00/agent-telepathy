@@ -4,6 +4,7 @@ version = "0.4.1"
 edition = "2021"
 description = "no_std-compatible TPCP core types and cryptography"
 license = "AGPL-3.0"
+repository = "https://github.com/Etriti00/agent-telepathy"
 
 [dependencies]
 serde = { version = "1", default-features = false, features = ["derive", "alloc"] }

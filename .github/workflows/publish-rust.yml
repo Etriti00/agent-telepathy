@@ -1,0 +1,31 @@
+name: Publish Rust crates to crates.io
+
+on:
+  workflow_run:
+    workflows: ["TPCP CI/CD"]
+    types: [completed]
+    branches: ['main']
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      startsWith(github.event.workflow_run.head_branch, 'v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish tpcp-core
+        run: cd tpcp-rs && cargo publish -p tpcp-core
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Wait for tpcp-core to be indexed
+        run: sleep 30
+
+      - name: Publish tpcp-std
+        run: cd tpcp-rs && cargo publish -p tpcp-std
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
