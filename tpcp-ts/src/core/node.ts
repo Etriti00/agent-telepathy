@@ -444,7 +444,7 @@ export class TPCPNode extends EventEmitter {
 
       this.peerRegistry.set(senderIdentity.agent_id, {
         identity: senderIdentity,
-        address: `ws://unknown`
+        address: ''
       });
       console.log(`Auto-registered peer: ${senderIdentity.framework} (${senderIdentity.agent_id})`);
     } catch (e) {

@@ -24,8 +24,8 @@ import java.util.function.Consumer;
  *   AgentIdentity identity = mgr.createIdentity("Java");
  *   TPCPNode node = new TPCPNode(identity, mgr);
  *   node.registerHandler(Intent.TASK_REQUEST, env -> System.out.println("Task: " + env.payload));
- *   node.connect("ws://other-agent:8765").join();
- *   node.sendMessage("ws://other-agent:8765", "other-agent-id", Intent.HANDSHAKE,
+ *   node.connect("wss://other-agent:8765").join();
+ *   node.sendMessage("wss://other-agent:8765", "other-agent-id", Intent.HANDSHAKE,
  *       mapper.valueToTree(new TextPayload("hello")));
  * }</pre>
  */
