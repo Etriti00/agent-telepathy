@@ -163,7 +163,7 @@ class AgentIdentityManager:
         Signs the deterministic JSON representation of a payload dictionary.
         Returns a base64 encoded signature string.
         """
-        serialized_payload = json.dumps(payload_dict, separators=(',', ':'), sort_keys=True).encode('utf-8')
+        serialized_payload = json.dumps(payload_dict, separators=(',', ':'), sort_keys=True, ensure_ascii=False).encode('utf-8')
         signature = self._private_key.sign(serialized_payload)
         return base64.b64encode(signature).decode('utf-8')
 
@@ -183,7 +183,7 @@ class AgentIdentityManager:
             signature_bytes = base64.b64decode(signature_str)
             
             public_key = ed25519.Ed25519PublicKey.from_public_bytes(public_bytes)
-            serialized_payload = json.dumps(payload_dict, separators=(',', ':'), sort_keys=True).encode('utf-8')
+            serialized_payload = json.dumps(payload_dict, separators=(',', ':'), sort_keys=True, ensure_ascii=False).encode('utf-8')
             
             public_key.verify(signature_bytes, serialized_payload)
             return True
