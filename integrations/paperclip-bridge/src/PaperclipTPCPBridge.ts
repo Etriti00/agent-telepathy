@@ -35,12 +35,10 @@ let TPCP_AVAILABLE = false;
 
 try {
   // Try to load the local tpcp-ts build
-  const tpcpModule = await import("../../tpcp-ts/src/index.js").catch(
-    () => import("tpcp-sdk")
-  );
-  TPCPNode = tpcpModule.TPCPNode;
+  const tpcpModule = await import("tpcp-sdk");
+  TPCPNode = tpcpModule.RelayTPCPNode ?? tpcpModule.TPCPNode;
   Intent = tpcpModule.Intent;
-  AgentIdentity = tpcpModule.AgentIdentity;
+  AgentIdentity = null; // not a class in tpcp-sdk, identity is inline
   TPCP_AVAILABLE = true;
 } catch {
   console.warn(
@@ -162,8 +160,6 @@ export class PaperclipTPCPBridge {
 
     this.node = new TPCPNode(
       identity,
-      "127.0.0.1",
-      config.tpcp.port,
       config.tpcp.relayUrl
     );
 
