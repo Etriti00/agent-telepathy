@@ -168,6 +168,64 @@ services:
         condition: service_healthy
     restart: "no"
 
+
+  # xyops -- workflow automation, job scheduling, and service monitoring
+  # UI: http://localhost:5522
+  xyops:
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "npm install -g xyops@latest && npx xyops --host 0.0.0.0 --port 5522 --db /data/xyops.db"
+    ports:
+      - "5522:5522"
+    volumes:
+      - xyops-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:5522"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - integration
+
+  # xyops TPCP Bridge -- connects xyops to the TPCP agent network
+  # Aura/Paperclip send TPCP job requests; xyops callbacks flow back via TPCP
+  xyops-bridge:
+    build:
+      context: ./xyops-bridge
+      dockerfile: Dockerfile
+    ports:
+      - "8102:8102"
+      - "3002:3002"
+    environment:
+      - TPCP_RELAY_URL=ws://adns-relay:8765
+      - XYOPS_TPCP_PORT=8102
+      - XYOPS_URL=http://xyops:5522
+      - XYOPS_API_KEY=${XYOPS_API_KEY:-}
+      - XYOPS_WEBHOOK_PORT=3002
+      - XYOPS_WEBHOOK_PATH=/xyops/webhook
+      - XYOPS_BRIDGE_PUBLIC_URL=${XYOPS_BRIDGE_PUBLIC_URL:-http://xyops-bridge:3002}
+      - AURA_AGENT_ID=${AURA_AGENT_ID:-aura-agent}
+      - PAPERCLIP_AGENT_ID=${PAPERCLIP_AGENT_ID:-paperclip-agent}
+      - TPCP_RELAY_HEALTH=http://adns-relay:8765/health
+      - PAPERCLIP_URL=http://paperclip:3000
+      - OLLAMA_URL=http://ollama:11434
+      - LOG_LEVEL=info
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3002/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    networks:
+      - integration
+    depends_on:
+      adns-relay:
+        condition: service_healthy
+      xyops:
+        condition: service_healthy
+
 networks:
   integration:
     driver: bridge
@@ -176,4 +234,6 @@ volumes:
   paperclip-data:
     driver: local
   ollama-models:
+    driver: local
+  xyops-data:
     driver: local

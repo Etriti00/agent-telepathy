@@ -1,4 +1,44 @@
-# Paperclip × Aura-App Integration via Agent-Telepathy
+# Aura-App × Paperclip × xyops — Autonomous Agency via Agent-Telepathy
+
+This directory contains the integration layer that connects **Aura-App** (lead gen / sales), **Paperclip** (service delivery), and **xyops** (job scheduling / monitoring) using **TPCP** as the communication backbone. Together they form a fully autonomous agency you can operate from your phone.
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                           SAME DEVICE                               │
+│                                                                     │
+│  ┌─────────────────────┐           ┌─────────────────────────────┐  │
+│  │      Aura-App       │           │         Paperclip           │  │
+│  │  (Lead Gen / Sales) │    TPCP   │   (Service Delivery)        │  │
+│  │  • Lead discovery   │◄─────────►│  • Website / app builds     │  │
+│  │  • Research         │           │  • Automations              │  │
+│  │  • Outreach         │           │  • Agent orchestration      │  │
+│  │  [aura-bridge]      │           │  [paperclip-bridge]         │  │
+│  └──────────┬──────────┘           └──────────────┬──────────────┘  │
+│             │                                     │                 │
+│             │         ┌────────────────┐          │                 │
+│             └────────►│  TPCP A-DNS    │◄─────────┘                 │
+│                       │  Relay :8765   │◄──────────────────────┐    │
+│                       └────────────────┘                       │    │
+│                                                                │    │
+│  ┌─────────────────────────────────────────────────────────┐  │    │
+│  │              xyops  (job scheduler + monitoring)         │  │    │
+│  │  • Schedule lead hunts, status reports, health checks   │  │    │
+│  │  • Alert on service failures → TPCP broadcast           │  │    │
+│  │  • Receive TPCP job requests from Aura/Paperclip        │  │    │
+│  │  [xyops-bridge]                              :5522       │──┘    │
+│  └─────────────────────────────────────────────────────────┘       │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │                Ollama (Local LLMs — free inference)          │   │
+│  │         codellama · llama3 · deepseek-coder                  │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
 
 This directory contains the integration layer that connects **Aura-App** (lead gen / sales) and **Paperclip** (service delivery) using the **TPCP (Telepathy Communication Protocol)** as the communication backbone.
 
@@ -74,7 +114,7 @@ integrations/
 │   ├── aura_tpcp_bridge.py     ← Drop-in Python class for Aura-App
 │   ├── schemas.py              ← Pydantic models
 │   └── example_usage.py        ← How to integrate into Aura-App
-└── paperclip-bridge/
+├── paperclip-bridge/
     ├── README.md
     ├── package.json
     ├── tsconfig.json
@@ -82,6 +122,18 @@ integrations/
     │   ├── index.ts             ← Entry point / CLI
     │   ├── PaperclipTPCPBridge.ts
     │   ├── OllamaAdapter.ts     ← Ollama webhook agent server
+    │   ├── schemas.ts           ← TypeScript types
+    │   └── config.ts            ← Configuration
+    └── Dockerfile
+└── xyops-bridge/
+    ├── README.md
+    ├── package.json
+    ├── tsconfig.json
+    ├── plugin/
+    │   └── tpcp-notify.js      ← xyops plugin: sends TPCP from inside jobs
+    ├── src/
+    │   ├── index.ts             ← Entry point
+    │   ├── XyopsTPCPBridge.ts   ← Core bridge (TPCP <-> xyops API)
     │   ├── schemas.ts           ← TypeScript types
     │   └── config.ts            ← Configuration
     └── Dockerfile
