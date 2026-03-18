@@ -1,0 +1,179 @@
+###############################################################################
+# Paperclip × Aura-App Integration Stack
+# ----------------------------------------
+# Runs the full integration on a single machine:
+#
+#   ┌─────────────────────────────────────────────┐
+#   │  adns-relay    (TPCP relay      :8765)       │
+#   │  paperclip-bridge               :8101 :3001  │
+#   │  ollama         (local LLMs     :11434)      │
+#   │  paperclip      (orchestrator   :3000)       │
+#   └─────────────────────────────────────────────┘
+#
+# Aura-App runs natively (PySide6 desktop app) and connects via:
+#   TPCP relay  → ws://localhost:8765
+#   Aura bridge → ws://localhost:8100 (run aura_tpcp_bridge.py in Aura-App)
+#
+# Quick start:
+#   docker compose up
+#   # Then start Aura-App with the bridge module
+###############################################################################
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # TPCP A-DNS Relay — message router for all agents
+  # ---------------------------------------------------------------------------
+  adns-relay:
+    image: ghcr.io/etriti00/agent-telepathy/relay:latest
+    build:
+      context: ..
+      dockerfile: tpcp/Dockerfile
+    ports:
+      - "8765:8765"
+    environment:
+      - TPCP_RELAY_HOST=0.0.0.0
+      - TPCP_RELAY_PORT=8765
+      - RATE_LIMIT=60
+      - LOG_LEVEL=info
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.connect(('localhost', 8765)); s.close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - integration
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # Paperclip — AI agent orchestration (service delivery)
+  # ---------------------------------------------------------------------------
+  paperclip:
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "npm install -g pnpm && npx paperclipai onboard --yes && npx paperclipai server"
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    volumes:
+      - paperclip-data:/app/.paperclip
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - integration
+    depends_on:
+      adns-relay:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Paperclip TPCP Bridge — connects Paperclip to TPCP network
+  # ---------------------------------------------------------------------------
+  paperclip-bridge:
+    build:
+      context: ./paperclip-bridge
+      dockerfile: Dockerfile
+    ports:
+      - "8101:8101"   # TPCP node port
+      - "3001:3001"   # Ollama webhook adapter port
+    environment:
+      - TPCP_RELAY_URL=ws://adns-relay:8765
+      - PAPERCLIP_TPCP_PORT=8101
+      - AURA_TPCP_PORT=8100
+      - PAPERCLIP_URL=http://paperclip:3000
+      - PAPERCLIP_API_KEY=${PAPERCLIP_API_KEY:-}
+      - PAPERCLIP_COMPANY_ID=${PAPERCLIP_COMPANY_ID:-}
+      - PAPERCLIP_WEBHOOK_PORT=3001
+      - OLLAMA_URL=http://ollama:11434
+      - OLLAMA_CODE_MODEL=${OLLAMA_CODE_MODEL:-codellama:13b}
+      - OLLAMA_CONTENT_MODEL=${OLLAMA_CONTENT_MODEL:-llama3:8b}
+      - OLLAMA_REVIEW_MODEL=${OLLAMA_REVIEW_MODEL:-deepseek-coder:6.7b}
+      - ESCALATION_MODEL=${ESCALATION_MODEL:-claude-sonnet-4-6}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - POLL_INTERVAL_MS=15000
+      - LOG_LEVEL=info
+    restart: unless-stopped
+    networks:
+      - integration
+    depends_on:
+      adns-relay:
+        condition: service_healthy
+      paperclip:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Ollama — local LLM inference
+  # ---------------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - integration
+    # Uncomment for GPU acceleration:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # ---------------------------------------------------------------------------
+  # Ollama model puller — ensures required models are available
+  # ---------------------------------------------------------------------------
+  ollama-init:
+    image: ollama/ollama:latest
+    entrypoint: >
+      sh -c "
+        sleep 5;
+        echo 'Pulling codellama:13b...';
+        ollama pull codellama:13b;
+        echo 'Pulling llama3:8b...';
+        ollama pull llama3:8b;
+        echo 'Pulling deepseek-coder:6.7b...';
+        ollama pull deepseek-coder:6.7b;
+        echo 'All models ready!';
+      "
+    environment:
+      - OLLAMA_HOST=ollama:11434
+    networks:
+      - integration
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
+networks:
+  integration:
+    driver: bridge
+
+volumes:
+  paperclip-data:
+    driver: local
+  ollama-models:
+    driver: local

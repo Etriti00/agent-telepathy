@@ -1,0 +1,227 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Paperclip-Aura Integration Schemas",
+  "description": "Cross-language schemas for TPCP payloads exchanged between Aura-App and Paperclip",
+  "definitions": {
+    "ServiceType": {
+      "type": "string",
+      "enum": [
+        "website_landing",
+        "website_ecommerce",
+        "website_portfolio",
+        "webapp_saas",
+        "webapp_internal_tool",
+        "webapp_dashboard",
+        "automation_email",
+        "automation_crm",
+        "automation_data_pipeline",
+        "automation_scraper",
+        "automation_reporting"
+      ],
+      "description": "The type of service Paperclip will deliver"
+    },
+    "ProjectStatus": {
+      "type": "string",
+      "enum": [
+        "received",
+        "scoping",
+        "in_progress",
+        "review",
+        "delivered",
+        "revision_requested",
+        "completed",
+        "cancelled"
+      ]
+    },
+    "Priority": {
+      "type": "string",
+      "enum": ["low", "normal", "high", "urgent"]
+    },
+    "ProjectRequest": {
+      "type": "object",
+      "description": "Sent by Aura-App to Paperclip when a lead qualifies for service delivery",
+      "required": [
+        "request_id",
+        "lead_id",
+        "company_name",
+        "contact_email",
+        "service_type",
+        "requirements",
+        "budget_usd"
+      ],
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Unique ID for this project request"
+        },
+        "lead_id": {
+          "type": "string",
+          "description": "Aura-App internal lead ID — used to correlate status updates back to the lead record"
+        },
+        "company_name": {
+          "type": "string",
+          "maxLength": 255
+        },
+        "contact_email": {
+          "type": "string",
+          "format": "email"
+        },
+        "contact_name": {
+          "type": "string"
+        },
+        "contact_phone": {
+          "type": "string"
+        },
+        "service_type": {
+          "$ref": "#/definitions/ServiceType"
+        },
+        "requirements": {
+          "type": "string",
+          "description": "Free-text description of what the client needs"
+        },
+        "budget_usd": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Client's budget in USD"
+        },
+        "priority": {
+          "$ref": "#/definitions/Priority",
+          "default": "normal"
+        },
+        "deadline_iso": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Optional delivery deadline (ISO 8601)"
+        },
+        "research_notes": {
+          "type": "string",
+          "description": "Aura's research on the company: pain points, tech stack, opportunities"
+        },
+        "existing_website": {
+          "type": "string",
+          "format": "uri",
+          "description": "Client's current website URL if any"
+        },
+        "industry": {
+          "type": "string"
+        },
+        "company_size": {
+          "type": "string",
+          "enum": ["solo", "2-10", "11-50", "51-200", "200+"]
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Additional context from Aura's research engines"
+        }
+      }
+    },
+    "ProjectStatusUpdate": {
+      "type": "object",
+      "description": "Sent by Paperclip back to Aura-App as the project progresses",
+      "required": ["request_id", "lead_id", "status", "updated_at"],
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "lead_id": {
+          "type": "string"
+        },
+        "paperclip_ticket_id": {
+          "type": "string",
+          "description": "The ticket ID created in Paperclip"
+        },
+        "status": {
+          "$ref": "#/definitions/ProjectStatus"
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable status update"
+        },
+        "progress_pct": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "deliverable_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL to the deliverable (deployed site, repo, etc.) when ready"
+        },
+        "deliverable_type": {
+          "type": "string",
+          "enum": ["github_repo", "deployed_url", "zip_download", "notion_doc", "other"]
+        },
+        "agent_notes": {
+          "type": "string",
+          "description": "Notes from the Paperclip agents about the work done"
+        },
+        "cost_usd": {
+          "type": "number",
+          "description": "Actual AI API cost incurred (mostly $0 when using Ollama)"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "OllamaHeartbeatRequest": {
+      "type": "object",
+      "description": "Paperclip sends this to the Ollama adapter's webhook endpoint",
+      "required": ["agent_id", "task", "context"],
+      "properties": {
+        "agent_id": {
+          "type": "string"
+        },
+        "task": {
+          "type": "object",
+          "properties": {
+            "id": {"type": "string"},
+            "title": {"type": "string"},
+            "description": {"type": "string"},
+            "goal_ancestry": {
+              "type": "array",
+              "items": {"type": "string"}
+            }
+          }
+        },
+        "context": {
+          "type": "object",
+          "description": "Project context passed through from Aura's research"
+        },
+        "preferred_model": {
+          "type": "string",
+          "description": "Hint about which Ollama model to use",
+          "examples": ["codellama:13b", "llama3:8b", "deepseek-coder:6.7b", "mistral:7b"]
+        }
+      }
+    },
+    "OllamaHeartbeatResponse": {
+      "type": "object",
+      "description": "Ollama adapter returns this to Paperclip",
+      "required": ["status", "output"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["completed", "needs_approval", "failed", "escalate_to_claude"]
+        },
+        "output": {
+          "type": "string",
+          "description": "The generated content, code, or response"
+        },
+        "model_used": {
+          "type": "string"
+        },
+        "tokens_used": {
+          "type": "integer"
+        },
+        "escalation_reason": {
+          "type": "string",
+          "description": "Why this task needs to be escalated to Claude"
+        }
+      }
+    }
+  }
+}

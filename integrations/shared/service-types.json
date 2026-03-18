@@ -1,0 +1,112 @@
+{
+  "service_types": {
+    "website_landing": {
+      "label": "Landing Page",
+      "description": "Single or multi-section marketing landing page",
+      "typical_stack": ["Next.js", "Tailwind CSS", "Vercel"],
+      "ollama_models": ["llama3:8b", "codellama:13b"],
+      "estimated_hours": 4,
+      "paperclip_role": "Frontend Developer"
+    },
+    "website_ecommerce": {
+      "label": "E-Commerce Website",
+      "description": "Full e-commerce store with product catalog, cart, and checkout",
+      "typical_stack": ["Next.js", "Stripe", "Tailwind CSS", "Vercel"],
+      "ollama_models": ["codellama:13b", "deepseek-coder:6.7b"],
+      "estimated_hours": 16,
+      "paperclip_role": "Full-Stack Developer"
+    },
+    "website_portfolio": {
+      "label": "Portfolio / Brochure Site",
+      "description": "Business or personal portfolio site showcasing work and services",
+      "typical_stack": ["Astro", "Tailwind CSS", "Netlify"],
+      "ollama_models": ["llama3:8b", "codellama:7b"],
+      "estimated_hours": 3,
+      "paperclip_role": "Frontend Developer"
+    },
+    "webapp_saas": {
+      "label": "SaaS Application",
+      "description": "Multi-user SaaS with auth, billing, and dashboard",
+      "typical_stack": ["Next.js", "Supabase", "Stripe", "Tailwind CSS"],
+      "ollama_models": ["deepseek-coder:6.7b", "codellama:13b"],
+      "escalate_complex_to_claude": true,
+      "estimated_hours": 40,
+      "paperclip_role": "Full-Stack Developer"
+    },
+    "webapp_internal_tool": {
+      "label": "Internal Business Tool",
+      "description": "Custom internal dashboard, CRM, or workflow tool",
+      "typical_stack": ["Next.js", "Supabase", "Tailwind CSS"],
+      "ollama_models": ["deepseek-coder:6.7b", "codellama:13b"],
+      "estimated_hours": 20,
+      "paperclip_role": "Full-Stack Developer"
+    },
+    "webapp_dashboard": {
+      "label": "Analytics Dashboard",
+      "description": "Data visualization dashboard connected to client's data sources",
+      "typical_stack": ["Next.js", "Recharts", "Supabase"],
+      "ollama_models": ["deepseek-coder:6.7b", "codellama:13b"],
+      "estimated_hours": 12,
+      "paperclip_role": "Full-Stack Developer"
+    },
+    "automation_email": {
+      "label": "Email Automation",
+      "description": "Drip campaigns, transactional emails, follow-up sequences",
+      "typical_stack": ["n8n", "Resend", "Python"],
+      "ollama_models": ["llama3:8b", "mistral:7b"],
+      "estimated_hours": 4,
+      "paperclip_role": "Automation Engineer"
+    },
+    "automation_crm": {
+      "label": "CRM Automation",
+      "description": "HubSpot / Apollo workflows, lead scoring, pipeline automation",
+      "typical_stack": ["n8n", "HubSpot API", "Python"],
+      "ollama_models": ["llama3:8b", "codellama:7b"],
+      "estimated_hours": 6,
+      "paperclip_role": "Automation Engineer"
+    },
+    "automation_data_pipeline": {
+      "label": "Data Pipeline",
+      "description": "ETL pipeline moving and transforming data between systems",
+      "typical_stack": ["Python", "Supabase", "n8n"],
+      "ollama_models": ["deepseek-coder:6.7b", "codellama:13b"],
+      "estimated_hours": 8,
+      "paperclip_role": "Data Engineer"
+    },
+    "automation_scraper": {
+      "label": "Web Scraper / Lead Enrichment",
+      "description": "Automated scraping and data enrichment pipeline",
+      "typical_stack": ["Python", "Playwright", "Supabase"],
+      "ollama_models": ["codellama:13b", "deepseek-coder:6.7b"],
+      "estimated_hours": 6,
+      "paperclip_role": "Automation Engineer"
+    },
+    "automation_reporting": {
+      "label": "Automated Reports",
+      "description": "Scheduled PDF or dashboard reports sent to stakeholders",
+      "typical_stack": ["Python", "WeasyPrint", "n8n"],
+      "ollama_models": ["llama3:8b", "codellama:7b"],
+      "estimated_hours": 5,
+      "paperclip_role": "Automation Engineer"
+    }
+  },
+  "ollama_model_routing": {
+    "code_generation": {
+      "primary": "codellama:13b",
+      "fallback": "deepseek-coder:6.7b",
+      "light": "codellama:7b"
+    },
+    "content_copy": {
+      "primary": "llama3:8b",
+      "fallback": "mistral:7b"
+    },
+    "planning_architecture": {
+      "primary": "llama3:8b",
+      "escalate_if_complex": "claude-sonnet-4-6"
+    },
+    "code_review": {
+      "primary": "deepseek-coder:6.7b",
+      "escalate_if_client_facing": "claude-sonnet-4-6"
+    }
+  }
+}
