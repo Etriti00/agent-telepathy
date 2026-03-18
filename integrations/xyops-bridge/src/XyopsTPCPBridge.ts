@@ -203,34 +203,39 @@ export class XyopsTPCPBridge extends EventEmitter {
     event: string,
     params: Record<string, unknown>,
   ): Promise<string | null> {
-    const url = new URL(`${config.xyops.apiUrl}/api/app/create_job/v1`);
-    url.searchParams.set("event", event);
-    for (const [k, v] of Object.entries(params))
-      if (v != null) url.searchParams.set(k, String(v));
+    // xyops uses run_event to launch jobs on demand (no standalone "create_job" API)
+    const body: Record<string, unknown> = { title: event, params };
     try {
-      const res = await fetch(url.toString(), {
-        headers: { "X-API-Key": config.xyops.apiKey },
+      const res = await fetch(`${config.xyops.apiUrl}/api/app/run_event/v1`, {
+        method: "POST",
+        headers: {
+          "X-API-Key": config.xyops.apiKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
-        console.error(`[XyopsBridge] create_job ${res.status}: ${await res.text()}`);
+        console.error(`[XyopsBridge] run_event ${res.status}: ${await res.text()}`);
         return null;
       }
       const data = (await res.json()) as any;
-      return data?.job?.id ?? data?.id ?? null;
+      // run_event returns { code: 0, id: job_id }
+      return data?.id ?? null;
     } catch (err) {
-      console.error("[XyopsBridge] create_job error:", err);
+      console.error("[XyopsBridge] run_event error:", err);
       return null;
     }
   }
 
   private async _getXyopsJob(jobId: string): Promise<any | null> {
     try {
+      // get_job (singular) returns a single job by ID
       const res = await fetch(
-        `${config.xyops.apiUrl}/api/app/get_jobs/v1?id=${encodeURIComponent(jobId)}`,
+        `${config.xyops.apiUrl}/api/app/get_job/v1?id=${encodeURIComponent(jobId)}`,
         { headers: { "X-API-Key": config.xyops.apiKey } },
       );
       const data = (await res.json()) as any;
-      return data?.jobs?.[0] ?? null;
+      return data?.job ?? null;
     } catch {
       return null;
     }
